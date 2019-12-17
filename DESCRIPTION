@@ -8,7 +8,7 @@ Authors@R: c(
 )
 URL: https://github.com/fishpm/nruPredict
 BugReports: https://github.com/fishpm/nruPredict/issues
-Description: More bla bla.
+Description: More bla bla. bla
 License: GPL-3
 Depends:
     R (>= 2.10)

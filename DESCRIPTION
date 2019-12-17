@@ -1,0 +1,14 @@
+Package: nruPredict
+Type: Package
+Title: Bla bla
+Version: 0.0.1
+Date: 2019-12-17
+Authors@R: c(
+    person("Patrick", "Fisher", role = c("aut", "cre"), email = "XX@XX.nru", comment = c(ORCID = "0000-XXXX-XXXX-XXX"))
+)
+URL: https://github.com/fishpm/nruPredict
+BugReports: https://github.com/fishpm/nruPredict/issues
+Description: More bla bla.
+License: GPL-3
+Depends:
+    R (>= 2.10)

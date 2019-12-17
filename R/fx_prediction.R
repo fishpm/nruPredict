@@ -176,7 +176,7 @@ fx_model <- function(df.set, predvar = NULL, outcome = NULL, model.type = 'logis
     return(list(pred.prob = pred.prob, pred.class = pred.class, actual.class = actual.class, parameters = parameters))
 }
 
-fx_modelPerf <- function(modelOutput, decisionThreshold = 0.5, many = T, perm = F, computeAUC = 'across'){
+fx_modelPerf <- function(modelOutput, decisionThreshold = 0.5, many = T, perm = F, compute.perf = 'across'){
 
     if (!many) {
         
@@ -193,11 +193,12 @@ fx_modelPerf <- function(modelOutput, decisionThreshold = 0.5, many = T, perm = 
         }
         
     } else {
-        modelOutput <- modelObj # delete me!
+
         nmodels <- length(modelOutput)
         params.set <- !(names(modelOutput[[1]]$parameters)=='train.rows'|
             names(modelOutput[[1]]$parameters)=='test.rows')
         parameters <- modelOutput[[1]][['parameters']][params.set]
+        parameters$compute.perf <- compute.perf
         class.levels <- parameters$class.levels
         
         nrows.df <- length(modelOutput[[1]]$parameters$train.rows)+
@@ -321,7 +322,13 @@ fx_modelPerf <- function(modelOutput, decisionThreshold = 0.5, many = T, perm = 
     perfMetrics <- data.frame(fold = unlist(lapply(foldPerf, function(i){i$fold}))) 
     perfMetrics <- as.data.frame(cbind(perfMetrics, 
                                        do.call(rbind,lapply(foldPerf, function(i){return(i$perfMetrics)}))))
+    if(compute.perf=='across'){
+        summaryMetrics <- perfMetrics[perfMetrics$fold=='all',colnames(perfMetrics)!='fold']
+    } else if (compute.perf == 'within'){
+        summaryMetrics <- colMeans(perfMetrics[perfMetrics$fold!='all',colnames(perfMetrics)!='fold'], na.rm = T)
+    }
     perf$perfMetrics <- perfMetrics
+    perf$summaryMetrics <- summaryMetrics
     perf$parameters <- parameters
     
     return(perf)
@@ -450,7 +457,9 @@ fx_perm <- function(df, modelPerfObj, modelObj, partitionList, nperm = 10, n.cor
                      outcome = parameters$outcome,
                      model.type = parameters$model.type)},
             mc.cores = n.cores)
-        modelPerfObjPerm <- fx_modelPerf(modelObjPerm, decisionThreshold = decisionThreshold)
+        modelPerfObjPerm <- fx_modelPerf(modelObjPerm, 
+                                         decisionThreshold = decisionThreshold, 
+                                         compute.perf = modelPerfObj$parameters$compute.perf)
         permPerfObj[[i]] <- modelPerfObjPerm
     }
 
@@ -521,9 +530,8 @@ fx_permPerf <- function(modelPerfObj, permObj, measures = NULL, nkfcv = F){
         parameters$nkfcv <- nkfcv
     }
     
-    
     df.perm <- as.data.frame(sapply(measures, function(i){
-        sapply(seq(nperm), function(j){permObj[[j]][[i]]})
+        sapply(seq(nperm), function(j){permObj[[j]]$summaryMetrics[[i]]})
     }))
     
     if(nkfcv){
@@ -539,7 +547,7 @@ fx_permPerf <- function(modelPerfObj, permObj, measures = NULL, nkfcv = F){
     } else {
         df.pval <- as.data.frame(
             sapply(measures, function(i){
-                obs <- modelPerfObj[[i]]
+                obs <- modelPerfObj$summaryMetrics[[i]]
                 pval <- (sum(df.perm[,i]>obs)+(sum(df.perm[,i]==obs)*0.5))/nperm
                 c(obs,pval)
             }),

@@ -258,75 +258,95 @@ fx_modelPerf <- function(modelOutput, decisionThreshold = 0.5, many = T, perm = 
 
         }
     }
-        
-    cMatrix <- matrix(0,nrow=2,ncol=2,
-                      dimnames=list(class.levels,
-                                    class.levels))
-    
-    cMatrix[class.levels[1],class.levels[1]] <- 
-        sum(pred.class==class.levels[1] & actual.class==class.levels[1])
-    cMatrix[class.levels[2],class.levels[1]] <- 
-        sum(pred.class==class.levels[2] & actual.class==class.levels[1])
-    cMatrix[class.levels[1],class.levels[2]] <- 
-        sum(pred.class==class.levels[1] & actual.class==class.levels[2])
-    cMatrix[class.levels[2],class.levels[2]] <- 
-        sum(pred.class==class.levels[2] & actual.class==class.levels[2])
-    
-    # roc values
-    if (!is.null(pred.prob)){
-        pred.prob.sort <- pred.prob[order(pred.prob,decreasing=T)]
-        actual.class.sort <- actual.class[order(pred.prob,decreasing=T)]
-        
-        # generate fpr and tpr values and plt
-        roc.vals <- lapply(c(1,pred.prob.sort), function(i){
-            tp <- sum(pred.prob.sort>=i&actual.class.sort==class.levels[2])
-            fp <- sum(pred.prob.sort>=i&actual.class.sort==class.levels[1])
-            fn <- sum(pred.prob.sort<i&actual.class.sort==class.levels[2])
-            tn <- sum(pred.prob.sort<i&actual.class.sort==class.levels[1])
-            fpr <- fp/(fp+tn) # false-positive rate
-            tpr <- tp/(tp+fn) # true-positive rate
-            return(c(fpr,tpr))
-        })
-        fpr <- unlist(roc.vals)[c(T,F)] # fpr are odd elements
-        tpr <- unlist(roc.vals)[c(F,T)] # tpr are even elements
-        id <- order(fpr)
-        roc.auc <- sum(diff(fpr[id])*rollmean(tpr[id],2))
-    }
     
     perf <- list()
-    perf$actual.class <- actual.class
-    perf$pred.class <- pred.class
-    perf$pred.prob <- pred.prob
+    perf$df.perf <- df.perf
+    perf$cMatrix <- list()
+    perf$cMatrix_descrip <- 'Rows: prediction, Columns: actual'
+    perf$negative.class <- class.levels[1]
+    perf$positive.class <- class.levels[2]
     perf$decisionThreshold <- decisionThreshold
-    perf$cMatrix <- cMatrix
-    perf$descrip <- 'Rows: prediction, Columns: actual'
-    perf$negative <- class.levels[1]
-    perf$positive <- class.levels[2]
     
-    # true positive
-    perf$TP <- cMatrix[perf$positive, perf$positive]
-    # false positive
-    perf$FP <- cMatrix[perf$positive, perf$negative]
-    # true negative
-    perf$TN <- cMatrix[perf$negative, perf$negative]
-    # false negative
-    perf$FN <- cMatrix[perf$negative, perf$positive]
-    # sensitivity
-    perf$sensitivity <- perf$TP/(perf$TP + perf$FN)
-    # specificity
-    perf$specificity <- perf$TN/(perf$TN + perf$FP)
-    # positive predictive value
-    perf$ppv <- perf$TP/(perf$TP + perf$FP)
-    # negative predictive value
-    perf$npv <- perf$TN/(perf$TN + perf$FN)
-    # accuracy
-    perf$accuracy <- (perf$TP + perf$TN)/sum(cMatrix)
+    # if(sample.type in specific group){}
+    uniqueFolds <- 
+    nFolds <- length(uniqueFolds)
     
-    perf$auc.ROC <- c(roc.auc,NA)[is.null(pred.prob)+1]
+    foldPerf <- lapply(c('all',unique(df.perf$fold)), function(i){
+
+        if(i=='all'){
+            firstrows <- sapply(unique(df.perf$orig.df.row), function(j){
+                return(which(df.perf$orig.df.row==j)[1])
+            })
+            df.tmp <- df.perf[firstrows,]
+        } else {
+            df.tmp <- df.perf[df.perf$fold==i,]
+        }
+        
+        cMatrix <- matrix(0,nrow=2,ncol=2,
+                          dimnames=list(class.levels,
+                                        class.levels))
+        
+        cMatrix[class.levels[1],class.levels[1]] <- 
+            sum(df.tmp$pred.class==class.levels[1] & df.tmp$actual.class==class.levels[1])
+        cMatrix[class.levels[2],class.levels[1]] <- 
+            sum(df.tmp$pred.class==class.levels[2] & df.tmp$actual.class==class.levels[1])
+        cMatrix[class.levels[1],class.levels[2]] <- 
+            sum(df.tmp$pred.class==class.levels[1] & df.tmp$actual.class==class.levels[2])
+        cMatrix[class.levels[2],class.levels[2]] <- 
+            sum(df.tmp$pred.class==class.levels[2] & df.tmp$actual.class==class.levels[2])
+        
+        perfMetrics <- data.frame(TP = cMatrix[perf$positive.class, perf$positive.class],
+                                  FP = cMatrix[perf$positive.class, perf$negative.class],
+                                  TN = cMatrix[perf$negative.class, perf$negative.class],
+                                  FN = cMatrix[perf$negative.class, perf$positive.class])
+        if(!all(is.na(df.perf$pred.prob))){
+            perfMetrics$auc.ROC <- fx_rocCompute(pred.prob = df.tmp$pred.prob, 
+                                                 actual.class = df.tmp$actual.class, 
+                                                 class.levels = class.levels)
+        } else {
+            perfMetrics$auc.ROC <- NA
+        }
+        
+        perfMetrics$sensitivity <- perfMetrics$TP/(perfMetrics$TP + perfMetrics$FN)
+        perfMetrics$specificity <- perfMetrics$TN/(perfMetrics$TN + perfMetrics$FP)
+        perfMetrics$ppv <- perfMetrics$TP/(perfMetrics$TP + perfMetrics$FP)
+        perfMetrics$npv <- perfMetrics$TN/(perfMetrics$TN + perfMetrics$FN)
+        perfMetrics$accuracy <- (perfMetrics$TP + perfMetrics$TN)/sum(cMatrix)
+        perfMetrics <- perfMetrics[,c('auc.ROC', 'accuracy', 'sensitivity', 'specificity', 'ppv', 'npv', 'TP', 'FP', 'TN', 'FN')]
+        return(list(cMatrix = cMatrix, perfMetrics = perfMetrics, fold = i))
+    })
     
+    if(foldPerf[[1]]$fold=='all'){perf$cMatrix <- foldPerf[[1]]$cMatrix}
+    
+    perfMetrics <- data.frame(fold = unlist(lapply(foldPerf, function(i){i$fold}))) 
+    perfMetrics <- as.data.frame(cbind(perfMetrics, 
+                                       do.call(rbind,lapply(foldPerf, function(i){return(i$perfMetrics)}))))
+    perf$perfMetrics <- perfMetrics
     perf$parameters <- parameters
     
     return(perf)
+}
+
+fx_rocCompute <- function(pred.prob, actual.class, class.levels){
+    
+    pred.prob.sort <- pred.prob[order(pred.prob,decreasing=T)]
+    actual.class.sort <- actual.class[order(pred.prob,decreasing=T)]
+    
+    # generate fpr and tpr values and plt
+    roc.vals <- lapply(c(1,pred.prob.sort), function(i){
+        tp <- sum(pred.prob.sort>=i&actual.class.sort==class.levels[2])
+        fp <- sum(pred.prob.sort>=i&actual.class.sort==class.levels[1])
+        fn <- sum(pred.prob.sort<i&actual.class.sort==class.levels[2])
+        tn <- sum(pred.prob.sort<i&actual.class.sort==class.levels[1])
+        fpr <- fp/(fp+tn) # false-positive rate
+        tpr <- tp/(tp+fn) # true-positive rate
+        return(c(fpr,tpr))
+    })
+    fpr <- unlist(roc.vals)[c(T,F)] # fpr are odd elements
+    tpr <- unlist(roc.vals)[c(F,T)] # tpr are even elements
+    id <- order(fpr)
+    roc.auc <- sum(diff(fpr[id])*rollmean(tpr[id],2))
+    return(roc.auc)
 }
 
 fx_cmatrix <- function(actual.class, pred.class, pred.prob = NULL, parameters = NULL){
@@ -395,72 +415,6 @@ fx_cmatrix <- function(actual.class, pred.class, pred.prob = NULL, parameters = 
     
     perf$parameters <- parameters
     return(perf)
-}
-
-fx_modelPerf2 <- function(modelOutput, decisionThreshold = 0.5, many = T, perm = F, auc.boot = F){
-    if (!many) {
-        
-        parameters <- modelOutput$parameters
-        parameters$decisionThreshold <- decisionThreshold
-        
-        actual.class <- modelOutput$actual.class
-        pred.prob <- modelOutput$pred.prob
-        class.levels <- modelOutput$parameters$class.levels
-        
-        if(!parameters$model.type=='svm'){
-            pred.class <- class.levels[(pred.prob > decisionThreshold)+1]
-        } else {
-            pred.class <- modelOutput$pred.class
-            decisionThreshold <- NA
-        }
-        
-        foldPerf <- fx_cmatrix(actual.class, pred.class, pred.prob, parameters)
-        return(foldPerf)
-        
-    } else {
-        
-        nmodels <- length(modelOutput)
-        params.set <- !(names(modelOutput[[1]]$parameters)=='train.rows'|
-                            names(modelOutput[[1]]$parameters)=='test.rows')
-        parameters <- modelOutput[[1]][['parameters']][params.set]
-        parameters$decisionThreshold <- decisionThreshold
-        class.levels <- parameters$class.levels
-        
-        if(!parameters$model.type=='svm'){
-            
-            overallPerf <- lapply(seq(nmodels), function(i){
-                actual.class <- modelObj[[i]]$actual.class
-                pred.prob <- modelObj[[i]]$pred.prob
-                pred.class <- parameters$class.levels[(pred.prob>decisionThreshold)+1]
-                foldPerf <- fx_cmatrix(actual.class, pred.class, pred.prob, parameters)
-                return(foldPerf)
-            })
-            
-        } else {
-            
-            overallPerf <- lapply(seq(nmodels), function(i){
-                actual.class <- modelObj[[i]]$actual.class
-                pred.prob <- NULL
-                pred.class <- modelObj[[i]]$pred.class
-                foldPerf <- fx_cmatrix(actual.class, pred.class, pred.prob, parameters)
-                return(foldPerf)
-            })
-            
-        }
-        
-        summaryPerf.colNames <- c('accuracy','auc.ROC','npv','ppv','specificity','sensitivity','TP','FP','TN','FN')
-        summaryPerf <- as.data.frame(matrix(NA, nrow = length(overallPerf),
-                              ncol = length(colNames)))
-        colnames(summaryPerf) <- summaryPerf.colNames
-        for(i in summaryPerf.colNames){
-            summaryPerf[,i] <- unlist(sapply(seq(length(overallPerf)), function(j){
-                overallPerf[[j]][[i]]
-            }))
-        }
-        return(list(summaryPerf=summaryPerf, 
-                    overallPerf=overallPerf))
-    }
-    
 }
 
 fx_perm <- function(df, modelPerfObj, modelObj, partitionList, nperm = 10, n.cores = 20){
@@ -817,6 +771,7 @@ writeLines('\tfx_scramble: Create df with scrambled group assignment')
 writeLines('\tfx_partition: List of partitions to apply to data frame')
 writeLines('\tfx_sample: Create train/test sub data frames')
 writeLines('\tfx_model: Train/test model on sub data frames')
+writeLines('\tfx_rocCompute: Computer AUC of ROC')
 writeLines('\tfx_modelPerf: Confusion matrix and model performance metrics')
 writeLines('\tfx_perm: Derive null distribution')
 writeLines('\tfx_permPerf: Estimate p-values, organize null distributions')

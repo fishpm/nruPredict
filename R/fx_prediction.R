@@ -119,8 +119,14 @@ fx_model <- function(df.set, predvar = NULL, outcome = NULL, model.type = 'logis
         outcome, ' ~ ', paste(predvar, collapse = '+')))
     
     if(model.type=='regression'){
+        if (is.factor(df.set$df.train[,outcome])){
+            stop('Regression not allowed for factor outcomes')
+        }
         class.levels <- NA
     } else {
+        if (!is.factor(df.set$df.train[,outcome])){
+            stop(paste0(model.type, ' (classification) not allowed for continuous outcomes'))
+        }
         class.levels <- levels(df.set$df.train[,outcome])
     }
     
@@ -220,7 +226,7 @@ fx_modelPerf <- function(modelOutput, decisionThreshold = 0.5, many = T, perm = 
         }
         
     } else {
-
+        
         nmodels <- length(modelOutput)
         params.set <- !(names(modelOutput[[1]]$parameters)=='train.rows'|
             names(modelOutput[[1]]$parameters)=='test.rows')
@@ -235,69 +241,58 @@ fx_modelPerf <- function(modelOutput, decisionThreshold = 0.5, many = T, perm = 
             lapply(seq(nmodels), function(j){
                 return(list(orig.df.row = modelOutput[[j]]$parameters$test.rows,
                             fold = rep(j,length(modelOutput[[j]]$parameters$test.rows)),
-                            actual.class = modelOutput[[j]]$actual.class))
+                            actual.class = modelOutput[[j]]$actual.class,
+                            actual.values = modelOutput[[j]]$actual.values))
                        }),
             data.frame))
-        rownames(df.perf) <- seq(nrow(df.perf))
         
-        # each observation in test set only once
-        if (all(table(df.perf$orig.df.row)==1)){
-            df.perf$pred.prob <- sapply(seq(nrow(df.perf)), function(i){
-                list.elem <- df.perf$fold[i]
-                pred.elem <- modelOutput[[df.perf$fold[i]]]$parameters$test.rows==df.perf$orig.df.row[i]
-                modelOutput[[list.elem]]$pred.prob[pred.elem]
-            })
-            df.perf$pred.class <- sapply(seq(nrow(df.perf)), function(i){
-                list.elem <- df.perf$fold[i]
-                pred.elem <- modelOutput[[df.perf$fold[i]]]$parameters$test.rows==df.perf$orig.df.row[i]
-                modelOutput[[list.elem]]$pred.class[pred.elem]
-            })
-            if(all(is.na(df.perf$pred.class))){
-                df.perf$pred.class <- parameters$class.levels[(df.perf$pred.prob > decisionThreshold)+1]
-            }
-            
-        # observations in multiple test sets
-        } else {
-            df.perf$pred.prob <- sapply(df.perf$orig.df.row, function(i){
-                pred.prob.set <- unlist(sapply(seq(nmodels), function(j){
-                    j.testrows <- modelOutput[[j]]$parameters$test.rows
-                    if(i%in%j.testrows){
-                        return(modelOutput[[j]]$pred.prob[j.testrows==i])
+        prediction.elements <- lapply(df.perf$orig.df.row, function(i){
+            pred.prob.set <- unlist(sapply(seq(nmodels), function(j){
+                j.testrows <- modelOutput[[j]]$parameters$test.rows
+                if(i%in%j.testrows){
+                    return(modelOutput[[j]]$pred.prob[j.testrows==i])
                     }
-                }))
-                return(median(pred.prob.set)) # MEDIAN!!
-            })
-            
-            df.perf$pred.class <- sapply(df.perf$orig.df.row,function(i){
-                pred.class.set <- unlist(sapply(seq(nmodels),function(j){
-                    j.testrows <- modelOutput[[j]]$parameters$test.rows
-                    if(i%in%j.testrows){
-                        return(modelOutput[[j]]$pred.class[j.testrows==i])
-                    }
-                }))
-                if (all(is.na(pred.class.set))){
-                    pred.prob.set <- df.perf$pred.prob[df.perf$orig.df.row==i]
-                    pred.class.set <- parameters$class.levels[(pred.prob.set > decisionThreshold)+1]
+            }))
+            pred.prob <- median(pred.prob.set) # MEDIAN!!
+            pred.class.set <- unlist(sapply(seq(nmodels),function(j){
+                j.testrows <- modelOutput[[j]]$parameters$test.rows
+                if(i%in%j.testrows){
+                    return(modelOutput[[j]]$pred.class[j.testrows==i])
                 }
-                votesRanked <- sort(table(pred.class.set),decreasing = T)
-                majorityClass <- names(votesRanked)[1]
-                return(majorityClass) # MAJORITY RULES!
-            })
-
-        }
+            }))
+            pred.class.set <- parameters$class.levels[(pred.prob.set > decisionThreshold)+1]
+            votesRanked <- sort(table(pred.class.set,useNA='always'),decreasing = T)
+            pred.class <- names(votesRanked)[1] # MAJORITY RULES!!
+            
+            pred.values.set <- unlist(sapply(seq(nmodels),function(j){
+                j.testrows <- modelOutput[[j]]$parameters$test.rows
+                if(i%in%j.testrows){
+                    return(modelOutput[[j]]$pred.values[j.testrows==i])
+                }
+            }))
+            pred.values <- median(pred.values.set) # MEDIAN!!
+            return(c(pred.prob,pred.class,pred.values))
+            
+        })
+        
+        df.tmp <- do.call(rbind, prediction.elements)
+        colnames(df.tmp) <- c('pred.prob', 'pred.class', 'pred.values')
+        df.perf <- cbind(df.perf, df.tmp)
+        df.perf$pred.prob <- as.numeric(as.character(df.perf$pred.prob))
+        df.perf$pred.class <- as.numeric(as.character(df.perf$pred.class))
+        df.perf$pred.values <- as.numeric(as.character(df.perf$pred.values))
+            
     }
     
     perf <- list()
     perf$df.perf <- df.perf
-    perf$cMatrix <- list()
-    perf$cMatrix_descrip <- 'Rows: prediction, Columns: actual'
-    perf$negative.class <- class.levels[1]
-    perf$positive.class <- class.levels[2]
-    perf$decisionThreshold <- decisionThreshold
-    
-    # if(sample.type in specific group){}
-    uniqueFolds <- 
-    nFolds <- length(uniqueFolds)
+    if (!parameters$model.type=='regression'){
+        perf$cMatrix <- list()
+        perf$cMatrix_descrip <- 'Rows: prediction, Columns: actual'
+        perf$negative.class <- class.levels[1]
+        perf$positive.class <- class.levels[2]
+        perf$decisionThreshold <- decisionThreshold
+    }
     
     foldPerf <- lapply(c('all',unique(df.perf$fold)), function(i){
 
@@ -310,41 +305,52 @@ fx_modelPerf <- function(modelOutput, decisionThreshold = 0.5, many = T, perm = 
             df.tmp <- df.perf[df.perf$fold==i,]
         }
         
-        cMatrix <- matrix(0,nrow=2,ncol=2,
-                          dimnames=list(class.levels,
-                                        class.levels))
-        
-        cMatrix[class.levels[1],class.levels[1]] <- 
-            sum(df.tmp$pred.class==class.levels[1] & df.tmp$actual.class==class.levels[1])
-        cMatrix[class.levels[2],class.levels[1]] <- 
-            sum(df.tmp$pred.class==class.levels[2] & df.tmp$actual.class==class.levels[1])
-        cMatrix[class.levels[1],class.levels[2]] <- 
-            sum(df.tmp$pred.class==class.levels[1] & df.tmp$actual.class==class.levels[2])
-        cMatrix[class.levels[2],class.levels[2]] <- 
-            sum(df.tmp$pred.class==class.levels[2] & df.tmp$actual.class==class.levels[2])
-        
-        perfMetrics <- data.frame(TP = cMatrix[perf$positive.class, perf$positive.class],
-                                  FP = cMatrix[perf$positive.class, perf$negative.class],
-                                  TN = cMatrix[perf$negative.class, perf$negative.class],
-                                  FN = cMatrix[perf$negative.class, perf$positive.class])
-        if(!all(is.na(df.perf$pred.prob))){
-            perfMetrics$auc.ROC <- fx_rocCompute(pred.prob = df.tmp$pred.prob, 
-                                                 actual.class = df.tmp$actual.class, 
-                                                 class.levels = class.levels)
+        if(parameters$model.type=='regression'){
+            cMatrix <- NA
+            rmse <- sqrt(mean((df.tmp$pred.values-df.tmp$actual.values)**2))
+            perfMetrics <- data.frame(rmse=rmse)
+            
         } else {
-            perfMetrics$auc.ROC <- NA
+            cMatrix <- matrix(0,nrow=2,ncol=2,
+                              dimnames=list(class.levels,
+                                            class.levels))
+            
+            cMatrix[class.levels[1],class.levels[1]] <- 
+                sum(df.tmp$pred.class==class.levels[1] & df.tmp$actual.class==class.levels[1])
+            cMatrix[class.levels[2],class.levels[1]] <- 
+                sum(df.tmp$pred.class==class.levels[2] & df.tmp$actual.class==class.levels[1])
+            cMatrix[class.levels[1],class.levels[2]] <- 
+                sum(df.tmp$pred.class==class.levels[1] & df.tmp$actual.class==class.levels[2])
+            cMatrix[class.levels[2],class.levels[2]] <- 
+                sum(df.tmp$pred.class==class.levels[2] & df.tmp$actual.class==class.levels[2])
+            
+            perfMetrics <- data.frame(TP = cMatrix[perf$positive.class, perf$positive.class],
+                                      FP = cMatrix[perf$positive.class, perf$negative.class],
+                                      TN = cMatrix[perf$negative.class, perf$negative.class],
+                                      FN = cMatrix[perf$negative.class, perf$positive.class])
+            if(!all(is.na(df.perf$pred.prob))){
+                perfMetrics$auc.ROC <- fx_rocCompute(pred.prob = df.tmp$pred.prob, 
+                                                     actual.class = df.tmp$actual.class, 
+                                                     class.levels = class.levels)
+            } else {
+                perfMetrics$auc.ROC <- NA
+            }
+            
+            perfMetrics$sensitivity <- perfMetrics$TP/(perfMetrics$TP + perfMetrics$FN)
+            perfMetrics$specificity <- perfMetrics$TN/(perfMetrics$TN + perfMetrics$FP)
+            perfMetrics$ppv <- perfMetrics$TP/(perfMetrics$TP + perfMetrics$FP)
+            perfMetrics$npv <- perfMetrics$TN/(perfMetrics$TN + perfMetrics$FN)
+            perfMetrics$accuracy <- (perfMetrics$TP + perfMetrics$TN)/sum(cMatrix)
+            perfMetrics <- perfMetrics[,c('auc.ROC', 'accuracy', 'sensitivity', 'specificity', 'ppv', 'npv', 'TP', 'FP', 'TN', 'FN')]
+            
         }
-        
-        perfMetrics$sensitivity <- perfMetrics$TP/(perfMetrics$TP + perfMetrics$FN)
-        perfMetrics$specificity <- perfMetrics$TN/(perfMetrics$TN + perfMetrics$FP)
-        perfMetrics$ppv <- perfMetrics$TP/(perfMetrics$TP + perfMetrics$FP)
-        perfMetrics$npv <- perfMetrics$TN/(perfMetrics$TN + perfMetrics$FN)
-        perfMetrics$accuracy <- (perfMetrics$TP + perfMetrics$TN)/sum(cMatrix)
-        perfMetrics <- perfMetrics[,c('auc.ROC', 'accuracy', 'sensitivity', 'specificity', 'ppv', 'npv', 'TP', 'FP', 'TN', 'FN')]
         return(list(cMatrix = cMatrix, perfMetrics = perfMetrics, fold = i))
+        
     })
     
-    if(foldPerf[[1]]$fold=='all'){perf$cMatrix <- foldPerf[[1]]$cMatrix}
+    if(!parameters$model.type=='regression'){
+        if(foldPerf[[1]]$fold=='all'){perf$cMatrix <- foldPerf[[1]]$cMatrix}
+    }
     
     perfMetrics <- data.frame(fold = unlist(lapply(foldPerf, function(i){i$fold}))) 
     perfMetrics <- as.data.frame(cbind(perfMetrics, 
@@ -352,7 +358,12 @@ fx_modelPerf <- function(modelOutput, decisionThreshold = 0.5, many = T, perm = 
     if(compute.perf=='across'){
         summaryMetrics <- perfMetrics[perfMetrics$fold=='all',colnames(perfMetrics)!='fold']
     } else if (compute.perf == 'within'){
-        summaryMetrics <- colMeans(perfMetrics[perfMetrics$fold!='all',colnames(perfMetrics)!='fold'], na.rm = T)
+        if(parameters$model.type=='regression'){
+            summaryMetrics <- mean(perfMetrics[perfMetrics$fold!='all',colnames(perfMetrics)!='fold'], na.rm = T)
+        } else {
+            summaryMetrics <- colMeans(perfMetrics[perfMetrics$fold!='all',colnames(perfMetrics)!='fold'], na.rm = T)
+        }
+        
     }
     perf$perfMetrics <- perfMetrics
     perf$summaryMetrics <- summaryMetrics

@@ -110,7 +110,7 @@ fx_sample <- function(df, partition){
 
 fx_model <- function(df.set, predvar = NULL, outcome = NULL, model.type = 'logistic', z.pred = T){
     
-    model.set <- c('logistic', 'rf', 'svm')
+    model.set <- c('logistic', 'rf', 'svm', 'regression')
     if(!tolower(model.type) %in% model.set){
         stop(paste0('Specify appropriate model type. Choose from: ', paste0(model.set, collapse = ', ')))
     } else {model.type <- tolower(model.type)}
@@ -118,7 +118,12 @@ fx_model <- function(df.set, predvar = NULL, outcome = NULL, model.type = 'logis
     model.formula <- as.formula(paste0(
         outcome, ' ~ ', paste(predvar, collapse = '+')))
     
-    class.levels <- levels(df.set$df.train[,outcome])
+    if(model.type=='regression'){
+        class.levels <- NA
+    } else {
+        class.levels <- levels(df.set$df.train[,outcome])
+    }
+    
     parameters <- list(sample.type = df.set$parameters$sample.type, 
                        train.rows = df.set$parameters$train.rows, 
                        test.rows = df.set$parameters$test.rows, 
@@ -153,27 +158,49 @@ fx_model <- function(df.set, predvar = NULL, outcome = NULL, model.type = 'logis
         model.object <- randomForest(model.formula, data = df.train)
     } else if (model.type == 'svm'){
         model.object <- svm(model.formula, data = df.train)
+    } else if (model.type == 'regression'){
+        model.object <- lm(model.formula, data = df.train)
     }
     
     # Use model to predict test datasets
     if (model.type == 'logistic'){
         pred.class <- rep(NA, nrow(df.test))
         pred.prob <- predict(model.object, newdata = df.test, type = 'resp')
+        pred.values <- rep(NA, nrow(df.test))
     } else if (model.type == 'rf'){
         lev <- levels(df.train[,outcome])
         pred.class <- rep(NA, nrow(df.test))
         pred.prob <- predict(model.object, newdata = df.test, type = 'prob')[,parameters$class.levels[2]]
+        pred.values <- rep(NA, nrow(df.test))
     } else if (model.type == 'svm'){
         pred.class <- as.character(predict(model.object, newdata = df.test))
         pred.prob <- rep(NA, nrow(df.test))
+        pred.values <- rep(NA, nrow(df.test))
+    } else if (model.type == 'regression'){
+        pred.values <- predict(model.object, newdata = df.test)
+        pred.prob <- rep(NA, nrow(df.test))
+        pred.class <- rep(NA, nrow(df.test))
+        
     }
     
-    actual.class <- as.character(df.set$df.test[,outcome])
+    if(model.type=='regression'){
+        actual.class <- rep(NA, nrow(df.test))
+        actual.values <- df.set$df.test[,outcome]
+    } else {
+        actual.class <- as.character(df.set$df.test[,outcome])
+        actual.values <- rep(NA, nrow(df.test))
+    }
+    
     if (is.numeric(parameters$sample.type)){
         parameters$nresample <- df.set$parameters$nresample
         parameters$balance.col <- df.set$parameters$balance.col
     }
-    return(list(pred.prob = pred.prob, pred.class = pred.class, actual.class = actual.class, parameters = parameters))
+    return(list(pred.prob = pred.prob, 
+                pred.class = pred.class, 
+                actual.class = actual.class, 
+                pred.values = pred.values,
+                actual.values = actual.values,
+                parameters = parameters))
 }
 
 fx_modelPerf <- function(modelOutput, decisionThreshold = 0.5, many = T, perm = F, compute.perf = 'across'){

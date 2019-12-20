@@ -359,7 +359,8 @@ fx_modelPerf <- function(modelOutput, decisionThreshold = 0.5, many = T, perm = 
         summaryMetrics <- perfMetrics[perfMetrics$fold=='all',colnames(perfMetrics)!='fold']
     } else if (compute.perf == 'within'){
         if(parameters$model.type=='regression'){
-            summaryMetrics <- mean(perfMetrics[perfMetrics$fold!='all',colnames(perfMetrics)!='fold'], na.rm = T)
+            rmse <- mean(perfMetrics[perfMetrics$fold!='all',colnames(perfMetrics)!='fold'], na.rm = T)
+            summaryMetrics <- data.frame(rmse=rmse)
         } else {
             summaryMetrics <- colMeans(perfMetrics[perfMetrics$fold!='all',colnames(perfMetrics)!='fold'], na.rm = T)
         }
@@ -548,7 +549,11 @@ fx_perm2 <- function(df, modelPerfObj, modelObj, partitionList, nperm = 10, n.co
 
 fx_permPerf <- function(modelPerfObj, permObj, measures = NULL, nkfcv = F){
     
-    measuresSet <- c('accuracy', 'auc.ROC', 'sensitivity', 'specificity', 'ppv', 'npv')
+    if(modelPerfObj$parameters$model.type=='regression'){
+        measuresSet <- c('rmse')
+    } else {
+        measuresSet <- c('accuracy', 'auc.ROC', 'sensitivity', 'specificity', 'ppv', 'npv')
+    }
     
     if(is.null(measures)){
         measures <- measuresSet
@@ -568,9 +573,13 @@ fx_permPerf <- function(modelPerfObj, permObj, measures = NULL, nkfcv = F){
         parameters$nkfcv <- nkfcv
     }
     
-    df.perm <- as.data.frame(sapply(measures, function(i){
-        sapply(seq(nperm), function(j){permObj[[j]]$summaryMetrics[[i]]})
-    }))
+    if (parameters$model.type=='regression'){
+        df.perm <- data.frame(rmse=sapply(seq(nperm), function(j){permObj[[j]]$summaryMetrics}))
+    } else {
+        df.perm <- as.data.frame(sapply(measures, function(i){
+            sapply(seq(nperm), function(j){permObj[[j]]$summaryMetrics[[i]]})
+        }))
+    }
     
     if(nkfcv){
         df.pval <- as.data.frame(
@@ -585,8 +594,13 @@ fx_permPerf <- function(modelPerfObj, permObj, measures = NULL, nkfcv = F){
     } else {
         df.pval <- as.data.frame(
             sapply(measures, function(i){
-                obs <- modelPerfObj$summaryMetrics[[i]]
-                pval <- (sum(df.perm[,i]>obs)+(sum(df.perm[,i]==obs)*0.5))/nperm
+                if (parameters$model.type == 'regression'){
+                    obs <- modelPerfObj$summaryMetrics
+                    pval <- (sum(df.perm[,i]<obs)+(sum(df.perm[,i]==obs)*0.5))/nperm
+                } else {
+                    obs <- modelPerfObj$summaryMetrics[[i]]
+                    pval <- (sum(df.perm[,i]>obs)+(sum(df.perm[,i]==obs)*0.5))/nperm
+                }
                 c(obs,pval)
             }),
             row.names = c('obs','pval'))

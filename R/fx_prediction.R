@@ -37,7 +37,6 @@ fx_modelPerf <- function(modelOutput, decisionThreshold = 0.5, many = T, perm = 
         params.set <- !(names(modelOutput[[1]]$parameters)=='train.rows'|
             names(modelOutput[[1]]$parameters)=='test.rows')
         parameters <- modelOutput[[1]][['parameters']][params.set]
-        parameters$compute.perf <- compute.perf
         class.levels <- parameters$class.levels
         
         nrows.df <- length(modelOutput[[1]]$parameters$train.rows)+
@@ -56,10 +55,6 @@ fx_modelPerf <- function(modelOutput, decisionThreshold = 0.5, many = T, perm = 
                                 actual.values = modelOutput[[j]]$pred.full$actual.values))
                 }),
                 data.frame))
-            
-            out <- list()
-            out$df.allfolds <- df.allfolds
-            out$parameters <- parameters
             
         } else if(modelOutput[[1]]$parameters$model.type%in%classmodels){
             
@@ -80,13 +75,10 @@ fx_modelPerf <- function(modelOutput, decisionThreshold = 0.5, many = T, perm = 
                 df.allfolds$pred.class.full <- class.levels[as.numeric(df.allfolds$pred.prob.full>decisionThreshold)+1]
             }
             
-            out <- list()
-            out$df.allfolds <- df.allfolds
-            out$cmat.descrip <- 'Rows: prediction, Columns: actual'
-            out$negative.class <- parameters$class.levels[1]
-            out$positive.class <- parameters$class.levels[2]
-            out$decisionThreshold <- decisionThreshold
-            out$parameters <- parameters
+            parameters$cmat.descrip <- 'Rows: prediction, Columns: actual'
+            parameters$negative.class <- parameters$class.levels[1]
+            parameters$positive.class <- parameters$class.levels[2]
+            parameters$decisionThreshold <- decisionThreshold
             
         } else {stop(paste0('Not sure how to handle: ', modelOutput[[1]]$parameters$model.type))}
     }
@@ -131,10 +123,10 @@ fx_modelPerf <- function(modelOutput, decisionThreshold = 0.5, many = T, perm = 
             cmat.full[class.levels[2],class.levels[2]] <-
                 sum(df.tmp$pred.class.full==class.levels[2] & df.tmp$actual.class==class.levels[2])
             
-            perfMetrics <- data.frame(TP.covar = cmat.covar[out$positive.class, out$positive.class],
-                                      FP.covar = cmat.covar[out$positive.class, out$negative.class],
-                                      TN.covar = cmat.covar[out$negative.class, out$negative.class],
-                                      FN.covar = cmat.covar[out$negative.class, out$positive.class])
+            perfMetrics <- data.frame(TP.covar = cmat.covar[parameters$positive.class, parameters$positive.class],
+                                      FP.covar = cmat.covar[parameters$positive.class, parameters$negative.class],
+                                      TN.covar = cmat.covar[parameters$negative.class, parameters$negative.class],
+                                      FN.covar = cmat.covar[parameters$negative.class, parameters$positive.class])
             perfMetrics$sens.covar <- perfMetrics$TP.covar/(perfMetrics$TP.covar + perfMetrics$FN.covar)
             perfMetrics$spec.covar <- perfMetrics$TN.covar/(perfMetrics$TN.covar + perfMetrics$FP.covar)
             perfMetrics$ppv.covar <- perfMetrics$TP.covar/(perfMetrics$TP.covar + perfMetrics$FP.covar)
@@ -152,10 +144,10 @@ fx_modelPerf <- function(modelOutput, decisionThreshold = 0.5, many = T, perm = 
                 perfMetrics$auc.ROC.covar <- perfMetrics$auc.ROC.full <- NA
             }
             
-            perfMetrics$TP.full <- cmat.full[out$positive.class, out$positive.class]
-            perfMetrics$FP.full <- cmat.full[out$positive.class, out$negative.class]
-            perfMetrics$TN.full <- cmat.full[out$negative.class, out$negative.class]
-            perfMetrics$FN.full <- cmat.full[out$negative.class, out$positive.class]
+            perfMetrics$TP.full <- cmat.full[parameters$positive.class, parameters$positive.class]
+            perfMetrics$FP.full <- cmat.full[parameters$positive.class, parameters$negative.class]
+            perfMetrics$TN.full <- cmat.full[parameters$negative.class, parameters$negative.class]
+            perfMetrics$FN.full <- cmat.full[parameters$negative.class, parameters$positive.class]
             perfMetrics$sens.full <- perfMetrics$TP.full/(perfMetrics$TP.full + perfMetrics$FN.full)
             perfMetrics$spec.full <- perfMetrics$TN.full/(perfMetrics$TN.full + perfMetrics$FP.full)
             perfMetrics$ppv.full <- perfMetrics$TP.full/(perfMetrics$TP.full + perfMetrics$FP.full)
@@ -177,6 +169,8 @@ fx_modelPerf <- function(modelOutput, decisionThreshold = 0.5, many = T, perm = 
         perfMetrics[nrow(perfMetrics),colnames(perfMetrics)[colnames(perfMetrics)!='fold']] <- 
             unlist(lapply(colnames(perfMetrics)[colnames(perfMetrics)!='fold'], 
                           function(i){mean(perfMetrics[perfMetrics$fold%in%unique(df.allfolds$fold),i],na.rm=T)}))
+        cmat.covar <- NULL
+        cmat.full <- NULL
         
     } else if(modelOutput[[1]]$parameters$model.type%in%classmodels){
         
@@ -188,16 +182,13 @@ fx_modelPerf <- function(modelOutput, decisionThreshold = 0.5, many = T, perm = 
         perfMetrics[nrow(perfMetrics),colnames(perfMetrics)[colnames(perfMetrics)!='fold']] <- 
             unlist(lapply(colnames(perfMetrics)[colnames(perfMetrics)!='fold'], 
                           function(i){mean(perfMetrics[perfMetrics$fold%in%unique(df.allfolds$fold),i], na.rm=T)}))
+        cmat.covar <- foldPerf[[1]]$cmat.covar
+        cmat.full <- foldPerf[[1]]$cmat.full
         
     }
     
-    perf$perfMetrics <- perfMetrics
-    perf$parameters <- parameters
-    
-    return(perf)
+    return(list(perfMetrics = perfMetrics, parameters = parameters, cmat.covar = cmat.covar, cmat.full = cmat.full, df.allfolds = df.allfolds))
 }
-
-
 ## * fx_scramble
 #'
 #' @keywords internal
@@ -420,7 +411,6 @@ fx_model <- function(df.set, covar = NULL, voi = NULL, outcome = NULL, model.typ
                 parameters = parameters))
 }
 
-
 ## * fx_rocCompute
 fx_rocCompute <- function(pred.prob, actual.class, class.levels){
     
@@ -525,7 +515,7 @@ fx_perm <- function(df, modelPerfObj, modelObj, partitionList, nperm = 10, n.cor
         parameters$nresample <- partitionList[[1]]$nresample
         parameters$balance.col <- partitionList[[1]]$balance.col
     }
-    decisionThreshold <- modelPerfObj$decisionThreshold
+    decisionThreshold <- modelPerfObj$parameters$decisionThreshold
     
     for (i in seq(nperm)){
         if (i%in%updateMarks){
@@ -550,31 +540,19 @@ fx_perm <- function(df, modelPerfObj, modelObj, partitionList, nperm = 10, n.cor
             mc.cores = n.cores)
         modelPerfObjPerm <- fx_modelPerf(modelObjPerm, 
                                          decisionThreshold = decisionThreshold)
+        
+        modelPerfObjPerm$df.allfolds <- NULL
+        modelPerfObjPerm$parameters <- NULL
         permPerfObj[[i]] <- modelPerfObjPerm
     }
 
     writeLines('Permutation testing complete!')
     return(permPerfObj)
-} # not sure if this is totally working
+}
 
 ## * fx_permPerf
-fx_permPerf <- function(modelPerfObj, permObj, measures = NULL, nkfcv = F){
+fx_permPerf <- function(modelPerfObj, permObj, measures = NULL, nkfcv = F, compute.perf = 'across', df.perm.out = T){
     
-    if(modelPerfObj$parameters$model.type=='regression'){
-        measuresSet <- c('rmse')
-    } else {
-        measuresSet <- c('accuracy', 'auc.ROC', 'sensitivity', 'specificity', 'ppv', 'npv')
-    }
-    
-    if(is.null(measures)){
-        measures <- measuresSet
-    } else {
-        if(any(!measures %in% measuresSet)){
-            stop(paste0('Unknown outcome measures: ', paste(measures[which(!measures%in%measuresSet)], collapse = ',')))
-        }
-    }
-        
-    nperm <- length(permObj)
     if (nkfcv){
         niter <- length(modelPerfObj)
         parameters <- modelPerfObj[[1]]$parameters
@@ -584,12 +562,33 @@ fx_permPerf <- function(modelPerfObj, permObj, measures = NULL, nkfcv = F){
         parameters$nkfcv <- nkfcv
     }
     
-    if (parameters$model.type=='regression'){
-        df.perm <- data.frame(rmse=sapply(seq(nperm), function(j){permObj[[j]]$summaryMetrics}))
+    parameters$nperm <- length(permObj)
+    
+    regmodels <- c('regression')
+    classmodels <- c('svm','rf','logistic')
+    
+    if(parameters$model.type%in%regmodels){
+        measuresSet <- c('rmse')
+    } else if(parameters$model.type%in%classmodels) {
+        measuresSet <- c('acc', 'auc.ROC', 'sens', 'spec', 'ppv', 'npv')
+    }
+    
+    if(is.null(measures)){
+        measures <- measuresSet
     } else {
-        df.perm <- as.data.frame(sapply(measures, function(i){
-            sapply(seq(nperm), function(j){permObj[[j]]$summaryMetrics[[i]]})
-        }))
+        if(any(!measures %in% measuresSet)){
+            stop(paste0('Unknown outcome measures: ', paste(measures[which(!measures%in%measuresSet)], collapse = ',')))
+        }
+    }
+    
+    if (parameters$model.type%in%regmodels){
+        df.perm <- data.frame(rmse=sapply(seq(nperm), function(j){permObj[[j]]$summaryMetrics}))
+    } else if(parameters$model.type%in%classmodels){
+        
+        df.perm <- as.data.frame(do.call(rbind,lapply(seq(nperm), function(j){
+            permObj[[j]]$perfMetrics[permObj[[j]]$perfMetrics$fold==compute.perf,]
+        })))
+        
     }
     
     if(nkfcv){
@@ -603,23 +602,30 @@ fx_permPerf <- function(modelPerfObj, permObj, measures = NULL, nkfcv = F){
             }),
             row.names = c('obs','pval'))
     } else {
-        df.pval <- as.data.frame(
-            sapply(measures, function(i){
-                if (parameters$model.type == 'regression'){
-                    obs <- modelPerfObj$summaryMetrics
-                    pval <- (sum(df.perm[,i]<obs)+(sum(df.perm[,i]==obs)*0.5))/nperm
-                } else {
-                    obs <- modelPerfObj$summaryMetrics[[i]]
-                    pval <- (sum(df.perm[,i]>obs)+(sum(df.perm[,i]==obs)*0.5))/nperm
-                }
-                c(obs,pval)
-            }),
-            row.names = c('obs','pval'))
+        if (parameters$model.type%in%regmodels){
+            obs <- modelPerfObj$summaryMetrics
+            pval <- (sum(df.perm[,i]<obs)+(sum(df.perm[,i]==obs)*0.5))/nperm
+        } else if(parameters$model.type%in%classmodels){
+            obs <- modelPerfObj$perfMetrics[modelPerfObj$perfMetrics$fold==compute.perf,
+                                            c(paste0(measures,'.covar'), paste0(measures,'.full'))]
+            pval <- sapply(names(obs), function(i){(sum(df.perm[,i]>obs[[i]],na.rm=T)+(sum(df.perm[,i]==obs[[i]],na.rm=T)*0.5))/sum(!is.na(df.perm[,i]))})
+            
+            df.pval <- as.data.frame(rbind(obs,pval))
+            rownames(df.pval) <- c('obs','pval')
+        }
+        
     }
     
-    return(list(df.perm=df.perm,
-                df.pval=df.pval,
-                parameters = parameters))
+    if(df.perm.out){
+        return(list(df.perm=df.perm,
+                    df.pval=df.pval,
+                    parameters = parameters))
+    } else {
+        return(list(df.pval=df.pval,
+                    parameters = parameters))
+    }
+    
+    
 }
 
 ## * fx_permPlot

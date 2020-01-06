@@ -1,12 +1,12 @@
 ## * fx_modelPerf
-#' @title
+#' @title xxx
 #' @description Short description of the function
-#' @name
-#'
-#' @param modelOutput
-#' @param decisionThreshold
+#' @name fx_modelPerf
+#' 
+#' @param modelOutput aa
+#' @param decisionThreshold bb
 #' @param perm If TRUE, .... Otherwise ...
-#' @param many
+#' @param many cc
 #'
 #' @return Describe output of the function
 #'
@@ -190,8 +190,6 @@ fx_modelPerf <- function(modelOutput, decisionThreshold = 0.5, many = T, perm = 
     return(list(perfMetrics = perfMetrics, parameters = parameters, cmat.covar = cmat.covar, cmat.full = cmat.full, df.allfolds = df.allfolds))
 }
 ## * fx_scramble
-#'
-#' @keywords internal
 fx_scramble <- function(df, outcome){
     if(is.null(outcome)){
         stop('Specify variable for scrambling')

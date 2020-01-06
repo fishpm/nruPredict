@@ -1,6 +1,6 @@
 library(devtools)
 library(roxygen2)
-setwd("c:/Users/hpl802/Downloads/")
+setwd("c:/Users/hpl802/Documents/GitHub/")
 
 ## refresh documentation
 roxygenise("nruPredict")
@@ -15,3 +15,4 @@ install("nruPredict", upgrade = "never", dependencies = "never")
 test()
 
 
+help(t.test)

@@ -1,233 +1,20 @@
-require('mvtnorm')
-require('parallel')
-require('pROC')
-require('lava')
-require('scales')
-require('ggplot2')
-library('randomForest')
-library('e1071')
-library('zoo')
-
-####
-## DEFINE FUNCTIONS
-####
-
-fx_scramble <- function(df, outcome){
-    if(is.null(outcome)){
-        stop('Specify variable for scrambling')
-    } else {
-        if(!outcome%in%colnames(df)){
-            stop('Specified outcome variable (', outcome, ') not in data.frame')
-        }
-    }
-    
-    df[,outcome] <- sample(df[,outcome])
-    return(df)
-}
-
-fx_partition <- function(df, type = 'loocv', nresample = NULL, balance.col = NULL){
-    
-    nSamples <- nrow(df)
-    nSequence <- seq(nSamples)
-    
-    if (!(type %in% c('loocv', 'ltocv') | is.numeric(type) | grepl('(-fold)$', type))){
-        stop('Invalid CV type.')
-    } else if (type == 'loocv' | type == 'ltocv'){
-        if (type == 'loocv'){nOut <- 1} else {nOut <- 2}
-        tmp <- combn(nSamples, nOut)
-        testSets <- split(tmp, col(tmp))
-        trainSets <- lapply(seq(length(testSets)), function(i){
-            nSequence[!(seq(nSamples) %in% testSets[[i]])]
-        })
-        partitionList <- lapply(seq(length(testSets)), function(i){
-            list('train' = trainSets[[i]], 'test' = testSets[[i]], 'sample.type' = type)
-        })
-        return(partitionList)
-    }
-    else if (grepl('(-fold)$', type)){
-        nFolds <- as.numeric(unlist(strsplit(type, '-fold')))
-        if (is.na(nFolds)){stop(paste0('Bad n-fold: ', type))}
-        tmp <- nSequence
-        gSizeFloor <- floor(nSamples/nFolds)
-        if (gSizeFloor == 0){
-            stop(paste0('Too many folds (', nFolds, '), too little data (', nSamples, ').'))
-        }
-        partitionList <- list()
-        for(i in seq(nFolds)){
-            if (i <= nSamples %% nFolds){
-               test <- sample(tmp, gSizeFloor+1)
-               tmp <- tmp[-which(tmp %in% test)]
-               }
-            else {
-                test <- sample(tmp, gSizeFloor)
-                tmp <- tmp[-which(tmp %in% test)]
-                }
-            train <- nSequence[-test]
-            partitionList[[i]] <- list('train' = train, 'test' = test, 'sample.type' = type)
-        }
-        return(partitionList)
-    }
-    else if (is.numeric(type)){
-        if (is.null(nresample)){stop(paste0('If type is numeric, resample must be defined.'))}
-        if (is.null(balance.col)){stop(paste0('If type is numeric, balance.col must be defined.'))}
-        groups <- levels(df[,balance.col])
-        nGroups <- table(df[,balance.col])
-        if (length(groups)>2){stop(paste0('Only 2 group levels allowed. Group levels identified: ', length(nGroups)))}
-        if (type >= min(nGroups)){stop(paste0('Specified group size (', type, ') >= smallest group size (', min(nGroups), ').'))}
-
-        partitionList <- lapply(seq(nresample), function(i){
-            g1 <- which(df[,balance.col] == groups[1])
-            g1_trainSets <- sample(g1, type)
-            g1_testSets <- g1[!(g1 %in% g1_trainSets)]
-            g2 <- which(df[,balance.col] == groups[2])
-            g2_trainSets <- sample(g2, type)
-            g2_testSets <- g2[!(g2 %in% g2_trainSets)]
-            trainSets <- c(g1_trainSets, g2_trainSets)
-            testSets <- c(g1_testSets, g2_testSets)
-            list('train' = trainSets, 'test' = testSets, 'sample.type' = type, 'nresample' = nresample, 'balance.col' = balance.col)
-        })
-        return(partitionList)
-    }
-    else {stop(paste0('Unexpected input: ', type))}
-    return(partitionList)
-}
-
-fx_sample <- function(df, partition){
-    df.train <- df[partition$train,]
-    df.test <- df[partition$test,]
-    parameters <- list(sample.type = partition$sample.type)
-    parameters$train.rows <- partition$train
-    parameters$test.rows <- partition$test
-    parameters$data.frame <- as.character(match.call()$df)
-    if (is.numeric(parameters$sample.type)){
-        parameters$nresample <- partition$nresample
-        parameters$balance.col <- partition$balance.col
-        }
-    return(list(df.train = df.train, 
-                df.test = df.test, 
-                parameters = parameters))
-}
-
-fx_model <- function(df.set, covar = NULL, voi = NULL, outcome = NULL, model.type = 'logistic', z.pred = T){
-    
-    classmodels <- c('logistic', 'rf', 'svm')
-    regmodels <- c('regression')
-    model.set <- c(classmodels,regmodels)
-    if(!tolower(model.type) %in% model.set){
-        stop(paste0('Specify appropriate model type. Choose from: ', paste0(model.set, collapse = ', ')))
-    } else {model.type <- tolower(model.type)}
-    
-    formula.covar <- as.formula(paste0(
-        outcome, ' ~ ', paste(covar, collapse = '+')))
-    formula.full <- as.formula(paste0(
-        outcome, ' ~ ', paste(c(covar,voi), collapse = '+')))
-    
-    if(model.type=='regression'){
-        if (is.factor(df.set$df.train[,outcome])){
-            stop('Regression not allowed for factor outcomes')
-        }
-        class.levels <- NA
-    } else {
-        if (!is.factor(df.set$df.train[,outcome])){
-            stop(paste0(model.type, ' (classification) not allowed for continuous outcomes'))
-        }
-        class.levels <- levels(df.set$df.train[,outcome])
-    }
-    
-    parameters <- list(sample.type = df.set$parameters$sample.type, 
-                       train.rows = df.set$parameters$train.rows, 
-                       test.rows = df.set$parameters$test.rows, 
-                       class.levels = class.levels,
-                       model.type = model.type, 
-                       covar = covar, 
-                       voi = voi,
-                       outcome = outcome, 
-                       formula.covar = formula.covar,
-                       formula.full = formula.full,
-                       data.frame = df.set$parameters$data.frame
-                       )
-    
-    # standardize non-factor predictor variables
-    if(z.pred){
-        
-        pred.continuous <- c(covar,voi)[sapply(c(covar,voi), function(i){!is.factor(df.set$df.train[,i])})]
-        df.train <- df.set$df.train
-        df.test <- df.set$df.test
-        for(i in pred.continuous){
-            elem.mean <- mean(df.set$df.train[,i])
-            elem.sd <- sd(df.set$df.train[,i])
-            df.train[,i] <- (df.set$df.train[,i]-elem.mean)/elem.sd
-            df.test[,i] <- (df.set$df.test[,i]-elem.mean)/elem.sd
-        }
-    } else {
-        df.train <- df.set$df.train
-        df.test <- df.set$df.test
-        }
-    
-    # Apply and predict model
-    if (model.type == 'logistic'){
-        
-        model.covar <- glm(formula.covar, data = df.train, family = 'binomial')
-        pred.covar <- data.frame(pred.class = rep(NA, nrow(df.test)),
-                                 pred.prob = predict(model.covar, newdata = df.test, type = 'resp'),
-                                 actual.class = as.character(df.set$df.test[,outcome])
-                                 )
-        
-        model.full <- glm(formula.full, data = df.train, family = 'binomial')
-        pred.full <- data.frame(pred.class = rep(NA, nrow(df.test)),
-                                pred.prob = predict(model.full, newdata = df.test, type = 'resp'),
-                                actual.class = as.character(df.set$df.test[,outcome])
-                                )
-        
-    } else if (model.type == 'rf'){
-        
-        model.covar <- randomForest(formula.covar, data = df.train)
-        pred.covar <- data.frame(pred.class = rep(NA, nrow(df.test)),
-                                 pred.prob = predict(model.covar, 
-                                                     newdata = df.test, 
-                                                     type = 'prob')[,parameters$class.levels[2]],
-                                 actual.class = as.character(df.set$df.test[,outcome]))
-        
-        model.full <- randomForest(formula.full, data = df.train)
-        pred.full <- data.frame(pred.class = rep(NA, nrow(df.test)),
-                                pred.prob = predict(model.full, 
-                                                     newdata = df.test, 
-                                                     type = 'prob')[,parameters$class.levels[2]],
-                                actual.class = as.character(df.set$df.test[,outcome]))
-        
-    } else if (model.type == 'svm'){
-        
-        model.covar <- svm(formula.covar, data = df.train)
-        pred.covar <- data.frame(pred.class = as.character(predict(model.covar, newdata = df.test)),
-                                 pred.prob = rep(NA, nrow(df.test)),
-                                 actual.class = as.character(df.set$df.test[,outcome]))
-        
-        model.full <- svm(formula.full, data = df.train)
-        pred.full <- data.frame(pred.class = as.character(predict(model.full, newdata = df.test)),
-                                pred.prob = rep(NA, nrow(df.test)),
-                                actual.class = as.character(df.set$df.test[,outcome]))
-        
-    } else if (model.type == 'regression'){
-        
-        model.covar <- lm(formula.covar, data = df.train)
-        pred.covar <- data.frame(pred.values = predict(model.covar, newdata = df.test),
-                                 actual.values = df.set$df.test[,outcome])
-        
-        model.full <- lm(formula.full, data = df.train)
-        pred.full <- data.frame(pred.values = predict(model.full, newdata = df.test),
-                                actual.values = df.set$df.test[,outcome])
-        
-    }
-    
-    if (is.numeric(parameters$sample.type)){
-        parameters$nresample <- df.set$parameters$nresample
-        parameters$balance.col <- df.set$parameters$balance.col
-    }
-    return(list(pred.covar = pred.covar,
-                pred.full = pred.full,
-                parameters = parameters))
-}
-
+## * fx_modelPerf
+#' @title
+#' @description Short description of the function
+#' @name
+#'
+#' @param modelOutput
+#' @param decisionThreshold
+#' @param perm If TRUE, .... Otherwise ...
+#' @param many
+#'
+#' @return Describe output of the function
+#'
+#' @examples
+#' # R code showing how to use the function
+#' 1+1
+#'
+#' @export
 fx_modelPerf <- function(modelOutput, decisionThreshold = 0.5, many = T, perm = F){
 
     if (!many) {
@@ -410,6 +197,231 @@ fx_modelPerf <- function(modelOutput, decisionThreshold = 0.5, many = T, perm = 
     return(perf)
 }
 
+
+## * fx_scramble
+#'
+#' @keywords internal
+fx_scramble <- function(df, outcome){
+    if(is.null(outcome)){
+        stop('Specify variable for scrambling')
+    } else {
+        if(!outcome%in%colnames(df)){
+            stop('Specified outcome variable (', outcome, ') not in data.frame')
+        }
+    }
+    
+    df[,outcome] <- sample(df[,outcome])
+    return(df)
+}
+
+## * fx_partition
+fx_partition <- function(df, type = 'loocv', nresample = NULL, balance.col = NULL){
+    
+    nSamples <- nrow(df)
+    nSequence <- seq(nSamples)
+    
+    if (!(type %in% c('loocv', 'ltocv') | is.numeric(type) | grepl('(-fold)$', type))){
+        stop('Invalid CV type.')
+    } else if (type == 'loocv' | type == 'ltocv'){
+        if (type == 'loocv'){nOut <- 1} else {nOut <- 2}
+        tmp <- combn(nSamples, nOut)
+        testSets <- split(tmp, col(tmp))
+        trainSets <- lapply(seq(length(testSets)), function(i){
+            nSequence[!(seq(nSamples) %in% testSets[[i]])]
+        })
+        partitionList <- lapply(seq(length(testSets)), function(i){
+            list('train' = trainSets[[i]], 'test' = testSets[[i]], 'sample.type' = type)
+        })
+        return(partitionList)
+    }
+    else if (grepl('(-fold)$', type)){
+        nFolds <- as.numeric(unlist(strsplit(type, '-fold')))
+        if (is.na(nFolds)){stop(paste0('Bad n-fold: ', type))}
+        tmp <- nSequence
+        gSizeFloor <- floor(nSamples/nFolds)
+        if (gSizeFloor == 0){
+            stop(paste0('Too many folds (', nFolds, '), too little data (', nSamples, ').'))
+        }
+        partitionList <- list()
+        for(i in seq(nFolds)){
+            if (i <= nSamples %% nFolds){
+               test <- sample(tmp, gSizeFloor+1)
+               tmp <- tmp[-which(tmp %in% test)]
+               }
+            else {
+                test <- sample(tmp, gSizeFloor)
+                tmp <- tmp[-which(tmp %in% test)]
+                }
+            train <- nSequence[-test]
+            partitionList[[i]] <- list('train' = train, 'test' = test, 'sample.type' = type)
+        }
+        return(partitionList)
+    }
+    else if (is.numeric(type)){
+        if (is.null(nresample)){stop(paste0('If type is numeric, resample must be defined.'))}
+        if (is.null(balance.col)){stop(paste0('If type is numeric, balance.col must be defined.'))}
+        groups <- levels(df[,balance.col])
+        nGroups <- table(df[,balance.col])
+        if (length(groups)>2){stop(paste0('Only 2 group levels allowed. Group levels identified: ', length(nGroups)))}
+        if (type >= min(nGroups)){stop(paste0('Specified group size (', type, ') >= smallest group size (', min(nGroups), ').'))}
+
+        partitionList <- lapply(seq(nresample), function(i){
+            g1 <- which(df[,balance.col] == groups[1])
+            g1_trainSets <- sample(g1, type)
+            g1_testSets <- g1[!(g1 %in% g1_trainSets)]
+            g2 <- which(df[,balance.col] == groups[2])
+            g2_trainSets <- sample(g2, type)
+            g2_testSets <- g2[!(g2 %in% g2_trainSets)]
+            trainSets <- c(g1_trainSets, g2_trainSets)
+            testSets <- c(g1_testSets, g2_testSets)
+            list('train' = trainSets, 'test' = testSets, 'sample.type' = type, 'nresample' = nresample, 'balance.col' = balance.col)
+        })
+        return(partitionList)
+    }
+    else {stop(paste0('Unexpected input: ', type))}
+    return(partitionList)
+}
+
+## * fx_sample
+fx_sample <- function(df, partition){
+    df.train <- df[partition$train,]
+    df.test <- df[partition$test,]
+    parameters <- list(sample.type = partition$sample.type)
+    parameters$train.rows <- partition$train
+    parameters$test.rows <- partition$test
+    parameters$data.frame <- as.character(match.call()$df)
+    if (is.numeric(parameters$sample.type)){
+        parameters$nresample <- partition$nresample
+        parameters$balance.col <- partition$balance.col
+        }
+    return(list(df.train = df.train, 
+                df.test = df.test, 
+                parameters = parameters))
+}
+
+## * fx_model
+fx_model <- function(df.set, covar = NULL, voi = NULL, outcome = NULL, model.type = 'logistic', z.pred = T){
+    
+    classmodels <- c('logistic', 'rf', 'svm')
+    regmodels <- c('regression')
+    model.set <- c(classmodels,regmodels)
+    if(!tolower(model.type) %in% model.set){
+        stop(paste0('Specify appropriate model type. Choose from: ', paste0(model.set, collapse = ', ')))
+    } else {model.type <- tolower(model.type)}
+    
+    formula.covar <- as.formula(paste0(
+        outcome, ' ~ ', paste(covar, collapse = '+')))
+    formula.full <- as.formula(paste0(
+        outcome, ' ~ ', paste(c(covar,voi), collapse = '+')))
+    
+    if(model.type=='regression'){
+        if (is.factor(df.set$df.train[,outcome])){
+            stop('Regression not allowed for factor outcomes')
+        }
+        class.levels <- NA
+    } else {
+        if (!is.factor(df.set$df.train[,outcome])){
+            stop(paste0(model.type, ' (classification) not allowed for continuous outcomes'))
+        }
+        class.levels <- levels(df.set$df.train[,outcome])
+    }
+    
+    parameters <- list(sample.type = df.set$parameters$sample.type, 
+                       train.rows = df.set$parameters$train.rows, 
+                       test.rows = df.set$parameters$test.rows, 
+                       class.levels = class.levels,
+                       model.type = model.type, 
+                       covar = covar, 
+                       voi = voi,
+                       outcome = outcome, 
+                       formula.covar = formula.covar,
+                       formula.full = formula.full,
+                       data.frame = df.set$parameters$data.frame
+                       )
+    
+    # standardize non-factor predictor variables
+    if(z.pred){
+        
+        pred.continuous <- c(covar,voi)[sapply(c(covar,voi), function(i){!is.factor(df.set$df.train[,i])})]
+        df.train <- df.set$df.train
+        df.test <- df.set$df.test
+        for(i in pred.continuous){
+            elem.mean <- mean(df.set$df.train[,i])
+            elem.sd <- sd(df.set$df.train[,i])
+            df.train[,i] <- (df.set$df.train[,i]-elem.mean)/elem.sd
+            df.test[,i] <- (df.set$df.test[,i]-elem.mean)/elem.sd
+        }
+    } else {
+        df.train <- df.set$df.train
+        df.test <- df.set$df.test
+        }
+    
+    # Apply and predict model
+    if (model.type == 'logistic'){
+        
+        model.covar <- glm(formula.covar, data = df.train, family = 'binomial')
+        pred.covar <- data.frame(pred.class = rep(NA, nrow(df.test)),
+                                 pred.prob = predict(model.covar, newdata = df.test, type = 'resp'),
+                                 actual.class = as.character(df.set$df.test[,outcome])
+                                 )
+        
+        model.full <- glm(formula.full, data = df.train, family = 'binomial')
+        pred.full <- data.frame(pred.class = rep(NA, nrow(df.test)),
+                                pred.prob = predict(model.full, newdata = df.test, type = 'resp'),
+                                actual.class = as.character(df.set$df.test[,outcome])
+                                )
+        
+    } else if (model.type == 'rf'){
+        
+        model.covar <- randomForest(formula.covar, data = df.train)
+        pred.covar <- data.frame(pred.class = rep(NA, nrow(df.test)),
+                                 pred.prob = predict(model.covar, 
+                                                     newdata = df.test, 
+                                                     type = 'prob')[,parameters$class.levels[2]],
+                                 actual.class = as.character(df.set$df.test[,outcome]))
+        
+        model.full <- randomForest(formula.full, data = df.train)
+        pred.full <- data.frame(pred.class = rep(NA, nrow(df.test)),
+                                pred.prob = predict(model.full, 
+                                                     newdata = df.test, 
+                                                     type = 'prob')[,parameters$class.levels[2]],
+                                actual.class = as.character(df.set$df.test[,outcome]))
+        
+    } else if (model.type == 'svm'){
+        
+        model.covar <- svm(formula.covar, data = df.train)
+        pred.covar <- data.frame(pred.class = as.character(predict(model.covar, newdata = df.test)),
+                                 pred.prob = rep(NA, nrow(df.test)),
+                                 actual.class = as.character(df.set$df.test[,outcome]))
+        
+        model.full <- svm(formula.full, data = df.train)
+        pred.full <- data.frame(pred.class = as.character(predict(model.full, newdata = df.test)),
+                                pred.prob = rep(NA, nrow(df.test)),
+                                actual.class = as.character(df.set$df.test[,outcome]))
+        
+    } else if (model.type == 'regression'){
+        
+        model.covar <- lm(formula.covar, data = df.train)
+        pred.covar <- data.frame(pred.values = predict(model.covar, newdata = df.test),
+                                 actual.values = df.set$df.test[,outcome])
+        
+        model.full <- lm(formula.full, data = df.train)
+        pred.full <- data.frame(pred.values = predict(model.full, newdata = df.test),
+                                actual.values = df.set$df.test[,outcome])
+        
+    }
+    
+    if (is.numeric(parameters$sample.type)){
+        parameters$nresample <- df.set$parameters$nresample
+        parameters$balance.col <- df.set$parameters$balance.col
+    }
+    return(list(pred.covar = pred.covar,
+                pred.full = pred.full,
+                parameters = parameters))
+}
+
+
+## * fx_rocCompute
 fx_rocCompute <- function(pred.prob, actual.class, class.levels){
     
     pred.prob.sort <- pred.prob[order(pred.prob,decreasing=T)]
@@ -432,6 +444,7 @@ fx_rocCompute <- function(pred.prob, actual.class, class.levels){
     return(roc.auc)
 }
 
+## * fx_cmatrix
 fx_cmatrix <- function(actual.class, pred.class, pred.prob = NULL, parameters = NULL){
     
     class.levels <- parameters$class.levels
@@ -500,6 +513,7 @@ fx_cmatrix <- function(actual.class, pred.class, pred.prob = NULL, parameters = 
     return(perf)
 } # deprecated
 
+## * fx_perm
 fx_perm <- function(df, modelPerfObj, modelObj, partitionList, nperm = 10, n.cores = 20){
     
     permPerfObj <- list()
@@ -543,6 +557,7 @@ fx_perm <- function(df, modelPerfObj, modelObj, partitionList, nperm = 10, n.cor
     return(permPerfObj)
 } # not sure if this is totally working
 
+## * fx_permPerf
 fx_permPerf <- function(modelPerfObj, permObj, measures = NULL, nkfcv = F){
     
     if(modelPerfObj$parameters$model.type=='regression'){
@@ -607,6 +622,7 @@ fx_permPerf <- function(modelPerfObj, permObj, measures = NULL, nkfcv = F){
                 parameters = parameters))
 }
 
+## * fx_permPlot
 fx_permPlot <- function(permPerfObj, measures = NULL, outFile = NULL){
     
     measuresSet <- c('accuracy', 'auc.ROC', 'sensitivity', 'specificity', 'ppv', 'npv')
@@ -665,6 +681,7 @@ fx_permPlot <- function(permPerfObj, measures = NULL, outFile = NULL){
     
 }
 
+## * fx_roc
 fx_roc <- function(modelPerfObj, permPerfObj = NULL, title.name = NULL, outFile = NULL){
     
     if(modelPerfObj$parameters$model.type=='svm'){
@@ -749,6 +766,7 @@ fx_roc <- function(modelPerfObj, permPerfObj = NULL, title.name = NULL, outFile 
 
 }
 
+## * fx_outFile
 fx_outFile <- function(outFile, ext.default = NULL){
     
     fname <- basename(outFile)
@@ -767,20 +785,8 @@ fx_outFile <- function(outFile, ext.default = NULL){
     return(outFileNew)
 }
 
+## * fx_summary
 fx_summary <- function(){}
 
-writeLines('Following functions loaded:')
-writeLines('\tfx_scramble: Create df with scrambled group assignment')
-writeLines('\tfx_partition: List of partitions to apply to data frame')
-writeLines('\tfx_sample: Create train/test sub data frames')
-writeLines('\tfx_model: Train/test model on sub data frames')
-writeLines('\tfx_rocCompute: Computer AUC of ROC')
-writeLines('\tfx_modelPerf: Confusion matrix and model performance metrics')
-writeLines('\tfx_perm: Derive null distribution')
-writeLines('\tfx_permPerf: Estimate p-values, organize null distributions')
-writeLines('\tfx_permPlot: Plot observed vs. null distributions')
-writeLines('\tfx_roc: Estimate and plot ROC')
-writeLines('\tfx_outFile: Handles specified output files')
-writeLines('\tfx_summary: Produces .txt summary of model info (incomplete)')
 
 

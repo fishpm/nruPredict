@@ -211,11 +211,13 @@ fx_model <- function(df.set, covar = NULL, voi = NULL, outcome = NULL, model.typ
         
         model.covar <- lm(formula.covar, data = df.train)
         pred.covar <- data.frame(pred.values = predict(model.covar, newdata = df.test),
-                                 actual.values = df.set$df.test[,outcome])
+                                 actual.values = df.set$df.test[,outcome],
+                                 rsq = summary(model.covar)$r.squared)
         
         model.full <- lm(formula.full, data = df.train)
         pred.full <- data.frame(pred.values = predict(model.full, newdata = df.test),
-                                actual.values = df.set$df.test[,outcome])
+                                actual.values = df.set$df.test[,outcome],
+                                rsq = summary(model.full)$r.squared)
         
     }
     
@@ -307,14 +309,27 @@ fx_modelPerf <- function(modelOutput, decisionThreshold = 0.5, many = T, perm = 
             df.tmp <- df.allfolds[df.allfolds$fold==i,]
         }
         
-        if(modelOutput[[1]]$parameters$model.type%in%regmodels){
+        if(parameters$model.type%in%regmodels){
+            foldrsq.covar <- sapply(seq(nmodels), function(j){modelOutput[[j]]$pred.covar$rsq[1]})
+            foldrsq.full <- sapply(seq(nmodels), function(j){modelOutput[[j]]$pred.full$rsq[1]})
+            
             rmse.covar <- sqrt(mean((df.tmp$pred.values.covar-df.tmp$actual.values)**2))
             rmse.full <- sqrt(mean((df.tmp$pred.values.full-df.tmp$actual.values)**2))
+            if(i=='across'){
+                rsq.covar <- mean(foldrsq.covar)
+                rsq.full <- mean(foldrsq.full)
+            } else {
+                rsq.covar <- foldrsq.covar[as.numeric(i)]
+                rsq.full <- foldrsq.full[as.numeric(i)]
+            }
+            
             perfMetrics <- data.frame(rmse.covar = rmse.covar,
-                                      rmse.full = rmse.full)
+                                      rmse.full = rmse.full,
+                                      rsq.covar = rsq.covar,
+                                      rsq.full = rsq.full)
             return(list(perfMetrics = perfMetrics, fold = i))
                    
-        } else if(modelOutput[[1]]$parameters$model.type%in%classmodels){
+        } else if(parameters$model.type%in%classmodels){
             
             cmat.covar <- cmat.full <- matrix(0,nrow=2,ncol=2,dimnames=list(class.levels,class.levels))
             
@@ -569,15 +584,9 @@ fx_permPerf <- function(modelPerfObj, permObj, measures = NULL, nkfcv = F, compu
         }
     }
     
-    if (parameters$model.type%in%regmodels){
-        df.perm <- data.frame(rmse=sapply(seq(nperm), function(j){permObj[[j]]$summaryMetrics}))
-    } else if(parameters$model.type%in%classmodels){
-        
-        df.perm <- as.data.frame(do.call(rbind,lapply(seq(nperm), function(j){
-            permObj[[j]]$perfMetrics[permObj[[j]]$perfMetrics$fold==compute.perf,]
-        })))
-        
-    }
+    df.perm <- as.data.frame(do.call(rbind,lapply(seq(parameters$nperm), function(i){
+        permObj[[i]]$perfMetrics[permObj[[i]]$perfMetrics$fold==compute.perf,]
+    })))
     
     if(nkfcv){
         df.pval <- as.data.frame(
@@ -591,8 +600,11 @@ fx_permPerf <- function(modelPerfObj, permObj, measures = NULL, nkfcv = F, compu
             row.names = c('obs','pval'))
     } else {
         if (parameters$model.type%in%regmodels){
-            obs <- modelPerfObj$summaryMetrics
-            pval <- (sum(df.perm[,i]<obs)+(sum(df.perm[,i]==obs)*0.5))/nperm
+            obs <- modelPerfObj$perfMetrics[modelPerfObj$perfMetrics$fold==compute.perf,
+                                            c(paste0(measures,'.covar'), paste0(measures,'.full'))]
+            pval <- sapply(names(obs), function(i){(sum(df.perm[,i]>obs[[i]],na.rm=T)+(sum(df.perm[,i]==obs[[i]],na.rm=T)*0.5))/sum(!is.na(df.perm[,i]))})
+            df.pval <- as.data.frame(rbind(obs,pval))
+            rownames(df.pval) <- c('obs','pval')
         } else if(parameters$model.type%in%classmodels){
             obs <- modelPerfObj$perfMetrics[modelPerfObj$perfMetrics$fold==compute.perf,
                                             c(paste0(measures,'.covar'), paste0(measures,'.full'))]

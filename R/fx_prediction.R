@@ -12,7 +12,7 @@ library('zoo')
 ## DEFINE FUNCTIONS
 ####
 
-fx_scramble <- function(df, outcome){
+fx_scramble <- function(df, outcome, boot = F, outcome.class = T){
     if(is.null(outcome)){
         stop('Specify variable for scrambling')
     } else {
@@ -20,8 +20,19 @@ fx_scramble <- function(df, outcome){
             stop('Specified outcome variable (', outcome, ') not in data.frame')
         }
     }
+    if(!boot){
+        df[,outcome] <- sample(df[,outcome])
+    } else {
+        if(outcome.class){
+            boot_sample <- resample(unlist(lapply(levels(df[,outcome]), function(i){
+                sample(which(df[,outcome]==i), replace = T)
+            }))) # outer resample randomizes wrt partitionList
+        } else {
+            boot_sample <- sample(nrow(df), replace = T)
+            df <- df[boot_sample,]
+        }
+    }
     
-    df[,outcome] <- sample(df[,outcome])
     return(df)
 }
 
@@ -554,6 +565,100 @@ fx_perm <- function(df, modelPerfObj, modelObj, partitionList, nperm = 10, n.cor
     return(permPerfObj)
 }
 
+fx_boot <- function(df, modelPerfObj, modelObj, partitionList, nboot = 10, n.cores = 20){
+
+    bootPerfObj <- list()
+    updateMarks <- seq(from = 0, to = nboot, length.out = 11)
+    writeLines('Deriving bootstrap results...')
+
+    parameters <- modelObj[[1]]$parameters
+    if(is.numeric(parameters$sample.type)){
+        parameters$nresample <- partitionList[[1]]$nresample
+        parameters$balance.col <- partitionList[[1]]$balance.col
+    }
+    decisionThreshold <- modelPerfObj$parameters$decisionThreshold
+
+    for (i in seq(nboot)){
+        if (i%in%updateMarks){
+            writeLines(paste0('\tBootstrap: ', i, ' (', (i/nboot)*100, '% complete)'))
+        }
+        
+        regmodels <- c('regression')
+        classmodels <- c('svm','rf','logistic')
+        if (parameters$model.type%in%regmodels){
+            outcome.class <- F
+        } else if (parameters$model.type%in%classmodels){
+            outcome.class <- T
+        } else {stop(paste0('Unregcognized model.type (', parameters$model.type, ')'))}
+        df.boot <- fx_scramble(df, parameters$outcome,
+                               boot=T, outcome.class=outcome.class)
+
+        modelObjPerm <- mclapply(seq(length(partitionList)), function(j){
+            fx_model(fx_sample(df.boot,partitionList[[j]]),
+                     covar = parameters$covar,
+                     voi = parameters$voi,
+                     outcome = parameters$outcome,
+                     model.type = parameters$model.type)},
+            mc.cores = n.cores)
+        modelPerfObjPerm <- fx_modelPerf(modelObjPerm,
+                                         decisionThreshold = decisionThreshold)
+
+        modelPerfObjPerm$df.allfolds <- NULL
+        modelPerfObjPerm$parameters <- NULL
+        bootPerfObj[[i]] <- modelPerfObjPerm
+    }
+
+    writeLines('Bootstrap complete!')
+    return(bootPerfObj)
+}
+
+fx_bootPerf <- function(modelPerfObj, bootObj, measures = NULL, compute.perf = 'across', df.boot.out = T, qrange = c(0.025, 0.975)){
+    
+    parameters <- modelPerfObj$parameters
+    parameters$nboot <- length(bootObj)
+    
+    regmodels <- c('regression')
+    classmodels <- c('svm','rf','logistic')
+    
+    if(parameters$model.type%in%regmodels){
+        measuresSet <- c('rmse', 'rsq')
+    } else if(parameters$model.type%in%classmodels) {
+        measuresSet <- c('acc', 'auc.ROC', 'sens', 'spec', 'ppv', 'npv')
+    }
+    
+    if(is.null(measures)){
+        measures <- measuresSet
+    } else {
+        if(any(!measures %in% measuresSet)){
+            stop(paste0('Unknown outcome measures: ', paste(measures[which(!measures%in%measuresSet)], collapse = ',')))
+        }
+    }
+    
+    df.boot <- as.data.frame(do.call(rbind,lapply(seq(parameters$nboot), function(i){
+        bootObj[[i]]$perfMetrics[bootObj[[i]]$perfMetrics$fold==compute.perf,]
+    })))
+    
+    obs <- modelPerfObj$perfMetrics[modelPerfObj$perfMetrics$fold==compute.perf,
+                                    c(paste0(measures,'.covar'), paste0(measures,'.full'))]
+    ci <- sapply(names(obs), function(i){c(quantile(df.boot[,i], probs = qrange), 
+                                           1-ecdf(df.boot[,i])(obs[,i]))})
+    df.ci <- as.data.frame(rbind(obs,ci))
+    rownames(df.ci)[c(1,ncol(df.ci))] <- c('obs','pval')
+    
+    if (parameters$model.type%in%regmodels){df.ci['pval', grep('^(rmse)', colnames(df.ci))] <- 1-df.ci['pval', grep('^(rmse)', colnames(df.ci))]} #HIGHER rmse is LESS desirable
+    
+    if(df.boot.out){
+        return(list(df.boot=df.boot,
+                    df.ci=df.ci,
+                    parameters = parameters))
+    } else {
+        return(list(df.ci=df.ci,
+                    parameters = parameters))
+    }
+    
+    
+}
+
 fx_permPerf <- function(modelPerfObj, permObj, measures = NULL, nkfcv = F, compute.perf = 'across', df.perm.out = T){
     
     if (nkfcv){
@@ -571,7 +676,7 @@ fx_permPerf <- function(modelPerfObj, permObj, measures = NULL, nkfcv = F, compu
     classmodels <- c('svm','rf','logistic')
     
     if(parameters$model.type%in%regmodels){
-        measuresSet <- c('rmse')
+        measuresSet <- c('rmse', 'rsq')
     } else if(parameters$model.type%in%classmodels) {
         measuresSet <- c('acc', 'auc.ROC', 'sens', 'spec', 'ppv', 'npv')
     }
@@ -599,20 +704,13 @@ fx_permPerf <- function(modelPerfObj, permObj, measures = NULL, nkfcv = F, compu
             }),
             row.names = c('obs','pval'))
     } else {
-        if (parameters$model.type%in%regmodels){
-            obs <- modelPerfObj$perfMetrics[modelPerfObj$perfMetrics$fold==compute.perf,
-                                            c(paste0(measures,'.covar'), paste0(measures,'.full'))]
-            pval <- sapply(names(obs), function(i){(sum(df.perm[,i]>obs[[i]],na.rm=T)+(sum(df.perm[,i]==obs[[i]],na.rm=T)*0.5))/sum(!is.na(df.perm[,i]))})
-            df.pval <- as.data.frame(rbind(obs,pval))
-            rownames(df.pval) <- c('obs','pval')
-        } else if(parameters$model.type%in%classmodels){
-            obs <- modelPerfObj$perfMetrics[modelPerfObj$perfMetrics$fold==compute.perf,
-                                            c(paste0(measures,'.covar'), paste0(measures,'.full'))]
-            pval <- sapply(names(obs), function(i){(sum(df.perm[,i]>obs[[i]],na.rm=T)+(sum(df.perm[,i]==obs[[i]],na.rm=T)*0.5))/sum(!is.na(df.perm[,i]))})
-            
-            df.pval <- as.data.frame(rbind(obs,pval))
-            rownames(df.pval) <- c('obs','pval')
-        }
+        
+        obs <- modelPerfObj$perfMetrics[modelPerfObj$perfMetrics$fold==compute.perf,
+                                        c(paste0(measures,'.covar'), paste0(measures,'.full'))]
+        pval <- sapply(names(obs), function(i){(sum(df.perm[,i]>obs[[i]],na.rm=T)+(sum(df.perm[,i]==obs[[i]],na.rm=T)*0.5))/sum(!is.na(df.perm[,i]))})
+        df.pval <- as.data.frame(rbind(obs,pval))
+        rownames(df.pval) <- c('obs','pval')
+        if (parameters$model.type%in%regmodels){df.pval['pval', grep('^(rmse)', colnames(df.pval))] <- 1-df.pval['pval', grep('^(rmse)', colnames(df.pval))]} #HIGHER rmse is LESS desirable
         
     }
     
@@ -628,22 +726,20 @@ fx_permPerf <- function(modelPerfObj, permObj, measures = NULL, nkfcv = F, compu
     
 }
 
-fx_permPlot <- function(permPerfObj, measures = NULL, outFile = NULL){
+fx_permPlot <- function(permPerfObj, outFile = NULL){
     
-    measuresSet <- c('accuracy', 'auc.ROC', 'sensitivity', 'specificity', 'ppv', 'npv')
-    if (permPerfObj$parameters$model.type=='svm'){
-        measuresSet <- measuresSet[!measuresSet=='auc.ROC']
+    measures <- colnames(permPerfObj$df.perm)[colnames(permPerfObj$df.perm)!='fold']
+    regmodels <- c('regression')
+    classmodels <- c('svm','rf','logistic')
+    if(permPerfObj$parameters$model.type%in%regmodels){
+        measures <- colnames(permPerfObj$df.perm)[colnames(permPerfObj$df.perm)!='fold']
+    } else if(permPerfObj$parameters$model.type%in%classmodels){
+        measures <- c("sens.covar", "spec.covar", "acc.covar", "auc.ROC.covar", "sens.full", "spec.full", "acc.full", "auc.ROC.full")
     }
     
-    if(is.null(measures)){
-        measures <- measuresSet
-    } else {
-        if(any(!measures %in% measuresSet)){
-            stop(paste0('Unknown outcome measures: ', paste(measures[which(!measures%in%measuresSet)], collapse = ',')))
-        }
+    if(!is.null(outFile)){
+        pdf(fx_outFile(outFile))
     }
-
-    if (!is.null(outFile)){pdf(fx_outFile(outFile))}
 
     plots <- list()
     for (measure in measures){
@@ -661,19 +757,37 @@ fx_permPlot <- function(permPerfObj, measures = NULL, outFile = NULL){
             captext <- paste0('N perm = ', nrow(permPerfObj$df.perm))
         }
         
-        plots[[length(plots)+1]] <-
-            ggplot(data = permPerfObj$df.perm, aes_string(x=measure)) +
-            geom_histogram(fill = 'darkblue') +
-            geom_vline(data = permPerfObj$df.pval['obs',], aes_string(xintercept=measure),
-                       color = 'darkorange', linetype = 'dashed', size = 2) +
-            scale_x_continuous(limits=c(0,1)) +
-            scale_y_continuous(name='Frequency') +
-            labs(title = measure,
-                 subtitle = subtext,
-                 caption = captext) +
-            theme(plot.title = element_text(hjust = 0.5),
-                  plot.subtitle = element_text(hjust = 0.5),
-                  plot.caption = element_text(hjust = 0.5))
+        regmodels <- c('regression')
+        classmodels <- c('svm','rf','logistic')
+        if(permPerfObj$parameters$model.type%in%regmodels){
+            plots[[length(plots)+1]] <-
+                ggplot(data = permPerfObj$df.perm, aes_string(x=measure)) +
+                geom_histogram(fill = 'darkblue') +
+                geom_vline(data = permPerfObj$df.pval['obs',], aes_string(xintercept=measure),
+                           color = 'darkorange', linetype = 'dashed', size = 2) +
+                scale_y_continuous(name='Frequency') +
+                labs(title = measure,
+                     subtitle = subtext,
+                     caption = captext) +
+                theme(plot.title = element_text(hjust = 0.5),
+                      plot.subtitle = element_text(hjust = 0.5),
+                      plot.caption = element_text(hjust = 0.5))
+            
+        } else if(permPerfObj$parameters$model.type%in%classmodels){
+            plots[[length(plots)+1]] <-
+                ggplot(data = permPerfObj$df.perm, aes_string(x=measure)) +
+                geom_histogram(fill = 'darkblue') +
+                geom_vline(data = permPerfObj$df.pval['obs',], aes_string(xintercept=measure),
+                           color = 'darkorange', linetype = 'dashed', size = 2) +
+                scale_x_continuous(limits=c(0,1)) +
+                scale_y_continuous(name='Frequency') +
+                labs(title = measure,
+                     subtitle = subtext,
+                     caption = captext) +
+                theme(plot.title = element_text(hjust = 0.5),
+                      plot.subtitle = element_text(hjust = 0.5),
+                      plot.caption = element_text(hjust = 0.5))
+        }
         
     }
     
@@ -781,7 +895,8 @@ fx_outFile <- function(outFile, ext.default = NULL){
     if(!length(ext[-1]) & !is.null(ext.default)){
         fname <- paste0(fname, ext.default)
     } else if (!length(ext[-1]) & is.null(ext.default)){
-        stop('File extension not specified.')
+        ext.default <- '.pdf'
+        fname <- paste0(fname, ext.default)
     }
     
     outFileNew <- paste(dname,fname,sep='/')

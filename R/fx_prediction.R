@@ -241,6 +241,22 @@ fx_model <- function(df.set, covar = NULL, voi = NULL, outcome = NULL, model.typ
                 parameters = parameters))
 }
 
+#' @title xxx
+#' @description Short description of the function
+#' @name fx_modelPerf
+#' 
+#' @param modelOutput aa
+#' @param decisionThreshold bb
+#' @param perm If TRUE, .... Otherwise ...
+#' @param many cc
+#'
+#' @return Describe output of the function
+#'
+#' @examples
+#' # R code showing how to use the function
+#' 1+1
+#'
+#' @export
 fx_modelPerf <- function(modelOutput, decisionThreshold = 0.5, many = T, perm = F){
 
     if (!many) {
@@ -612,7 +628,7 @@ fx_boot <- function(df, modelPerfObj, modelObj, partitionList, nboot = 10, n.cor
     return(bootPerfObj)
 }
 
-fx_bootPerf <- function(modelPerfObj, bootObj, measures = NULL, compute.perf = 'across', df.boot.out = T, qrange = c(0.025, 0.975)){
+fx_bootPerf <- function(modelPerfObj, bootObj, measures = NULL, compute.perf = 'across', df.iter.out = T, qrange = c(0.025, 0.975)){
     
     parameters <- modelPerfObj$parameters
     parameters$nboot <- length(bootObj)
@@ -634,32 +650,32 @@ fx_bootPerf <- function(modelPerfObj, bootObj, measures = NULL, compute.perf = '
         }
     }
     
-    df.boot <- as.data.frame(do.call(rbind,lapply(seq(parameters$nboot), function(i){
+    df.iter <- as.data.frame(do.call(rbind,lapply(seq(parameters$nboot), function(i){
         bootObj[[i]]$perfMetrics[bootObj[[i]]$perfMetrics$fold==compute.perf,]
     })))
     
     obs <- modelPerfObj$perfMetrics[modelPerfObj$perfMetrics$fold==compute.perf,
                                     c(paste0(measures,'.covar'), paste0(measures,'.full'))]
-    ci <- sapply(names(obs), function(i){c(quantile(df.boot[,i], probs = qrange), 
-                                           1-ecdf(df.boot[,i])(obs[,i]))})
-    df.ci <- as.data.frame(rbind(obs,ci))
-    rownames(df.ci)[c(1,ncol(df.ci))] <- c('obs','pval')
+    ci <- sapply(names(obs), function(i){c(quantile(df.iter[,i], probs = qrange), 
+                                           1-ecdf(df.iter[,i])(obs[,i]))})
+    df.pval <- as.data.frame(rbind(obs,ci))
+    rownames(df.pval)[c(1,ncol(df.pval))] <- c('obs','pval')
     
-    if (parameters$model.type%in%regmodels){df.ci['pval', grep('^(rmse)', colnames(df.ci))] <- 1-df.ci['pval', grep('^(rmse)', colnames(df.ci))]} #HIGHER rmse is LESS desirable
+    if (parameters$model.type%in%regmodels){df.pval['pval', grep('^(rmse)', colnames(df.pval))] <- 1-df.pval['pval', grep('^(rmse)', colnames(df.pval))]} #HIGHER rmse is LESS desirable
     
-    if(df.boot.out){
-        return(list(df.boot=df.boot,
-                    df.ci=df.ci,
+    if(df.iter.out){
+        return(list(df.iter=df.iter,
+                    df.pval=df.pval,
                     parameters = parameters))
     } else {
-        return(list(df.ci=df.ci,
+        return(list(df.pval=df.pval,
                     parameters = parameters))
     }
     
     
 }
 
-fx_permPerf <- function(modelPerfObj, permObj, measures = NULL, nkfcv = F, compute.perf = 'across', df.perm.out = T){
+fx_permPerf <- function(modelPerfObj, permObj, measures = NULL, nkfcv = F, compute.perf = 'across', df.iter.out = T){
     
     if (nkfcv){
         niter <- length(modelPerfObj)
@@ -689,7 +705,7 @@ fx_permPerf <- function(modelPerfObj, permObj, measures = NULL, nkfcv = F, compu
         }
     }
     
-    df.perm <- as.data.frame(do.call(rbind,lapply(seq(parameters$nperm), function(i){
+    df.iter <- as.data.frame(do.call(rbind,lapply(seq(parameters$nperm), function(i){
         permObj[[i]]$perfMetrics[permObj[[i]]$perfMetrics$fold==compute.perf,]
     })))
     
@@ -699,7 +715,7 @@ fx_permPerf <- function(modelPerfObj, permObj, measures = NULL, nkfcv = F, compu
                 obs <- mean(sapply(seq(niter), function(j){
                     modelPerfObj[[j]][[i]]
                     }))
-                pval <- (sum(df.perm[,i]>obs)+(sum(df.perm[,i]==obs)*0.5))/nperm
+                pval <- (sum(df.iter[,i]>obs)+(sum(df.iter[,i]==obs)*0.5))/nperm
                 c(obs,pval)
             }),
             row.names = c('obs','pval'))
@@ -707,15 +723,15 @@ fx_permPerf <- function(modelPerfObj, permObj, measures = NULL, nkfcv = F, compu
         
         obs <- modelPerfObj$perfMetrics[modelPerfObj$perfMetrics$fold==compute.perf,
                                         c(paste0(measures,'.covar'), paste0(measures,'.full'))]
-        pval <- sapply(names(obs), function(i){(sum(df.perm[,i]>obs[[i]],na.rm=T)+(sum(df.perm[,i]==obs[[i]],na.rm=T)*0.5))/sum(!is.na(df.perm[,i]))})
+        pval <- sapply(names(obs), function(i){(sum(df.iter[,i]>obs[[i]],na.rm=T)+(sum(df.iter[,i]==obs[[i]],na.rm=T)*0.5))/sum(!is.na(df.iter[,i]))})
         df.pval <- as.data.frame(rbind(obs,pval))
         rownames(df.pval) <- c('obs','pval')
         if (parameters$model.type%in%regmodels){df.pval['pval', grep('^(rmse)', colnames(df.pval))] <- 1-df.pval['pval', grep('^(rmse)', colnames(df.pval))]} #HIGHER rmse is LESS desirable
         
     }
     
-    if(df.perm.out){
-        return(list(df.perm=df.perm,
+    if(df.iter.out){
+        return(list(df.iter=df.iter,
                     df.pval=df.pval,
                     parameters = parameters))
     } else {
@@ -724,6 +740,91 @@ fx_permPerf <- function(modelPerfObj, permObj, measures = NULL, nkfcv = F, compu
     }
     
     
+}
+
+# update to fx_permPlot
+fx_Plot <- function(perfObj, outFile = NULL){
+
+    perfObj <- permPerfObj
+    # perfObj <- bootPerfObj
+
+    obj.type <- if('nperm'%in%names(perfObj$parameters)){
+        obj.type <- 'perm'
+    } else if('nboot'%in%names(perfObj$parameters)){
+        obj.type <- 'boot'
+    } else {stop('Cannot identify object type.')}
+
+    regmodels <- c('regression')
+    classmodels <- c('svm','rf','logistic')
+    if(perfObj$parameters$model.type%in%regmodels){
+        measures <- colnames(perfObj$df.iter)[colnames(perfObj$df.iter)!='fold']
+    } else if(permPerfObj$parameters$model.type%in%classmodels){
+        measures <- c("sens.covar", "spec.covar", "acc.covar", "auc.ROC.covar", "sens.full", "spec.full", "acc.full", "auc.ROC.full")
+    }
+
+    if(!is.null(outFile)){
+        pdf(fx_outFile(outFile))
+        writeLines(paste0('Plots being written to: ', fx_outFile(outFile)))
+    }
+
+    plots <- list()
+    for (measure in measures){
+        subtext <- paste0(measure, ' = ', signif(perfObj$df.pval['obs', measure],3), '; p-value = ', signif(permPerfObj$df.pval['pval', measure],3))
+
+        if(perfObj$parameters$nkfcv){
+            captext <- paste0('N ', obj.type, ' = ', nrow(perfObj$df.iter), '; nkfcv = ', perfObj$parameters$nkfcv)
+            perfValRange <- quantile(sapply(seq(length(mpo)), function(i){mpo[[i]]$accuracy}),probs = c(0.025, 0.975))
+        } else if(is.numeric(perfObj$parameters$sample.type)){
+            captext <- paste0('N ', obj.type, ' = ', nrow(perfObj$df.iter),
+                              '; train group size = ', perfObj$parameters$sample.type,
+                              '; nresamples = ', perfObj$parameters$nresample)
+        } else {
+            captext <- paste0('N ', obj.type, ' = ', nrow(perfObj$df.iter))
+        }
+        
+        #### HERE IS WHERE I STOPPED ####
+
+        regmodels <- c('regression')
+        classmodels <- c('svm','rf','logistic')
+        if(permPerfObj$parameters$model.type%in%regmodels){
+            plots[[length(plots)+1]] <-
+                ggplot(data = permPerfObj$df.perm, aes_string(x=measure)) +
+                geom_histogram(fill = 'darkblue') +
+                geom_vline(data = permPerfObj$df.pval['obs',], aes_string(xintercept=measure),
+                           color = 'darkorange', linetype = 'dashed', size = 2) +
+                scale_y_continuous(name='Frequency') +
+                labs(title = measure,
+                     subtitle = subtext,
+                     caption = captext) +
+                theme(plot.title = element_text(hjust = 0.5),
+                      plot.subtitle = element_text(hjust = 0.5),
+                      plot.caption = element_text(hjust = 0.5))
+
+        } else if(permPerfObj$parameters$model.type%in%classmodels){
+            plots[[length(plots)+1]] <-
+                ggplot(data = permPerfObj$df.perm, aes_string(x=measure)) +
+                geom_histogram(fill = 'darkblue') +
+                geom_vline(data = permPerfObj$df.pval['obs',], aes_string(xintercept=measure),
+                           color = 'darkorange', linetype = 'dashed', size = 2) +
+                scale_x_continuous(limits=c(0,1)) +
+                scale_y_continuous(name='Frequency') +
+                labs(title = measure,
+                     subtitle = subtext,
+                     caption = captext) +
+                theme(plot.title = element_text(hjust = 0.5),
+                      plot.subtitle = element_text(hjust = 0.5),
+                      plot.caption = element_text(hjust = 0.5))
+        }
+
+    }
+
+    suppressMessages(print(plots))
+
+    if (!is.null(outFile)){
+        writeLines(paste0('Output file written: ', fx_outFile(outFile)))
+        dev.off()
+    }
+
 }
 
 fx_permPlot <- function(permPerfObj, outFile = NULL){
@@ -910,13 +1011,20 @@ writeLines('\tfx_scramble: Create df with scrambled group assignment')
 writeLines('\tfx_partition: List of partitions to apply to data frame')
 writeLines('\tfx_sample: Create train/test sub data frames')
 writeLines('\tfx_model: Train/test model on sub data frames')
-writeLines('\tfx_rocCompute: Computer AUC of ROC')
 writeLines('\tfx_modelPerf: Confusion matrix and model performance metrics')
+writeLines('\tfx_rocCompute: Compute AUC of ROC')
 writeLines('\tfx_perm: Derive null distribution')
+writeLines('\tfx_boot: Bootstrap confidence intervals')
 writeLines('\tfx_permPerf: Estimate p-values, organize null distributions')
+writeLines('\tfx_bootPerf: Estimate CIs and p-values from bootstrap distributions')
 writeLines('\tfx_permPlot: Plot observed vs. null distributions')
 writeLines('\tfx_roc: Estimate and plot ROC')
 writeLines('\tfx_outFile: Handles specified output files')
 writeLines('\tfx_summary: Produces .txt summary of model info (incomplete)')
+
+## TODO
+# are fx_roc and fx_rocCompute redundant?
+# fill out fx_summary
+# when fx_plot finished, remove fx_permPlot
 
 

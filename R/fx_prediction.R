@@ -4,9 +4,9 @@ require('pROC')
 require('lava')
 require('scales')
 require('ggplot2')
-library('randomForest')
-library('e1071')
-library('zoo')
+require('randomForest')
+require('e1071')
+require('zoo')
 
 ####
 ## DEFINE FUNCTIONS
@@ -24,9 +24,10 @@ fx_scramble <- function(df, outcome, boot = F, outcome.class = T){
         df[,outcome] <- sample(df[,outcome])
     } else {
         if(outcome.class){
-            boot_sample <- resample(unlist(lapply(levels(df[,outcome]), function(i){
+            boot_sample <- sample(unlist(lapply(levels(df[,outcome]), function(i){
                 sample(which(df[,outcome]==i), replace = T)
             }))) # outer resample randomizes wrt partitionList
+            df <- df[boot_sample,]
         } else {
             boot_sample <- sample(nrow(df), replace = T)
             df <- df[boot_sample,]
@@ -628,10 +629,11 @@ fx_boot <- function(df, modelPerfObj, modelObj, partitionList, nboot = 10, n.cor
     return(bootPerfObj)
 }
 
-fx_bootPerf <- function(modelPerfObj, bootObj, measures = NULL, compute.perf = 'across', df.iter.out = T, qrange = c(0.025, 0.975)){
+fx_bootPerf <- function(modelPerfObj, bootObj, measures = NULL, compute.perf = 'within', df.iter.out = T, qrange = c(0.025, 0.975)){
     
     parameters <- modelPerfObj$parameters
     parameters$nboot <- length(bootObj)
+    parameters$nkfcv <- F
     
     regmodels <- c('regression')
     classmodels <- c('svm','rf','logistic')
@@ -656,12 +658,9 @@ fx_bootPerf <- function(modelPerfObj, bootObj, measures = NULL, compute.perf = '
     
     obs <- modelPerfObj$perfMetrics[modelPerfObj$perfMetrics$fold==compute.perf,
                                     c(paste0(measures,'.covar'), paste0(measures,'.full'))]
-    ci <- sapply(names(obs), function(i){c(quantile(df.iter[,i], probs = qrange), 
-                                           1-ecdf(df.iter[,i])(obs[,i]))})
+    ci <- sapply(names(obs), function(i){c(quantile(df.iter[,i], probs = qrange, na.rm = T))})
     df.pval <- as.data.frame(rbind(obs,ci))
-    rownames(df.pval)[c(1,ncol(df.pval))] <- c('obs','pval')
-    
-    if (parameters$model.type%in%regmodels){df.pval['pval', grep('^(rmse)', colnames(df.pval))] <- 1-df.pval['pval', grep('^(rmse)', colnames(df.pval))]} #HIGHER rmse is LESS desirable
+    rownames(df.pval)[1] <- 'obs'
     
     if(df.iter.out){
         return(list(df.iter=df.iter,
@@ -675,7 +674,7 @@ fx_bootPerf <- function(modelPerfObj, bootObj, measures = NULL, compute.perf = '
     
 }
 
-fx_permPerf <- function(modelPerfObj, permObj, measures = NULL, nkfcv = F, compute.perf = 'across', df.iter.out = T){
+fx_permPerf <- function(modelPerfObj, permObj, measures = NULL, nkfcv = F, compute.perf = 'within', df.iter.out = T){
     
     if (nkfcv){
         niter <- length(modelPerfObj)
@@ -745,9 +744,6 @@ fx_permPerf <- function(modelPerfObj, permObj, measures = NULL, nkfcv = F, compu
 # update to fx_permPlot
 fx_Plot <- function(perfObj, outFile = NULL){
 
-    perfObj <- permPerfObj
-    # perfObj <- bootPerfObj
-
     obj.type <- if('nperm'%in%names(perfObj$parameters)){
         obj.type <- 'perm'
     } else if('nboot'%in%names(perfObj$parameters)){
@@ -758,7 +754,7 @@ fx_Plot <- function(perfObj, outFile = NULL){
     classmodels <- c('svm','rf','logistic')
     if(perfObj$parameters$model.type%in%regmodels){
         measures <- colnames(perfObj$df.iter)[colnames(perfObj$df.iter)!='fold']
-    } else if(permPerfObj$parameters$model.type%in%classmodels){
+    } else if(perfObj$parameters$model.type%in%classmodels){
         measures <- c("sens.covar", "spec.covar", "acc.covar", "auc.ROC.covar", "sens.full", "spec.full", "acc.full", "auc.ROC.full")
     }
 
@@ -769,7 +765,7 @@ fx_Plot <- function(perfObj, outFile = NULL){
 
     plots <- list()
     for (measure in measures){
-        subtext <- paste0(measure, ' = ', signif(perfObj$df.pval['obs', measure],3), '; p-value = ', signif(permPerfObj$df.pval['pval', measure],3))
+        subtext <- paste0(measure, ' = ', signif(perfObj$df.pval['obs', measure],3), '; p-value = ', signif(perfObj$df.pval['pval', measure],3))
 
         if(perfObj$parameters$nkfcv){
             captext <- paste0('N ', obj.type, ' = ', nrow(perfObj$df.iter), '; nkfcv = ', perfObj$parameters$nkfcv)
@@ -781,16 +777,12 @@ fx_Plot <- function(perfObj, outFile = NULL){
         } else {
             captext <- paste0('N ', obj.type, ' = ', nrow(perfObj$df.iter))
         }
-        
-        #### HERE IS WHERE I STOPPED ####
 
-        regmodels <- c('regression')
-        classmodels <- c('svm','rf','logistic')
-        if(permPerfObj$parameters$model.type%in%regmodels){
+        if(perfObj$parameters$model.type%in%regmodels){
             plots[[length(plots)+1]] <-
-                ggplot(data = permPerfObj$df.perm, aes_string(x=measure)) +
+                ggplot(data = perfObj$df.iter, aes_string(x=measure)) +
                 geom_histogram(fill = 'darkblue') +
-                geom_vline(data = permPerfObj$df.pval['obs',], aes_string(xintercept=measure),
+                geom_vline(data = perfObj$df.pval['obs',], aes_string(xintercept=measure),
                            color = 'darkorange', linetype = 'dashed', size = 2) +
                 scale_y_continuous(name='Frequency') +
                 labs(title = measure,
@@ -800,11 +792,11 @@ fx_Plot <- function(perfObj, outFile = NULL){
                       plot.subtitle = element_text(hjust = 0.5),
                       plot.caption = element_text(hjust = 0.5))
 
-        } else if(permPerfObj$parameters$model.type%in%classmodels){
+        } else if(perfObj$parameters$model.type%in%classmodels){
             plots[[length(plots)+1]] <-
-                ggplot(data = permPerfObj$df.perm, aes_string(x=measure)) +
+                ggplot(data = perfObj$df.iter, aes_string(x=measure)) +
                 geom_histogram(fill = 'darkblue') +
-                geom_vline(data = permPerfObj$df.pval['obs',], aes_string(xintercept=measure),
+                geom_vline(data = perfObj$df.pval['obs',], aes_string(xintercept=measure),
                            color = 'darkorange', linetype = 'dashed', size = 2) +
                 scale_x_continuous(limits=c(0,1)) +
                 scale_y_continuous(name='Frequency') +
@@ -1026,5 +1018,6 @@ writeLines('\tfx_summary: Produces .txt summary of model info (incomplete)')
 # are fx_roc and fx_rocCompute redundant?
 # fill out fx_summary
 # when fx_plot finished, remove fx_permPlot
+# p-values from bootstrap, do i believe them?
 
 

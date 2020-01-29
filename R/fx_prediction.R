@@ -893,78 +893,73 @@ fx_permPlot <- function(permPerfObj, outFile = NULL){
     
 }
 
-fx_roc <- function(modelPerfObj, permPerfObj = NULL, title.name = NULL, outFile = NULL){
+fx_roc <- function(modelPerfObj, permPerfObj = NULL, bootPerfObj = NULL, title.name = NULL, outFile = NULL, compute.perf = 'within'){
     
     if(modelPerfObj$parameters$model.type=='svm'){
         stop('Cannot perform ROC on SVM model')
     }
     
     if(is.null(title.name)){title.name <- 'ROC Curve'}
-
-    pred.prob <- modelPerfObj$pred.prob
-    actual.class <- modelPerfObj$actual.class
-    pred.prob.sort <- pred.prob[order(pred.prob,decreasing=T)]
-    actual.class.sort <- actual.class[order(pred.prob,decreasing=T)]
+    
+    pred.prob.covar.sorted <- modelPerfObj$df.allfolds$pred.prob.covar[order(modelPerfObj$df.allfolds$pred.prob.covar,decreasing=T)]
+    actual.class.covar.sorted <- modelPerfObj$df.allfolds$actual.class[order(modelPerfObj$df.allfolds$pred.prob.covar,decreasing=T)]
+    pred.prob.full.sorted <- modelPerfObj$df.allfolds$pred.prob.full[order(modelPerfObj$df.allfolds$pred.prob.full,decreasing=T)]
+    actual.class.full.sorted <- modelPerfObj$df.allfolds$actual.class[order(modelPerfObj$df.allfolds$pred.prob.full,decreasing=T)]
     class.levels <- modelPerfObj$parameters$class.levels
     
     # generate fpr and tpr values and plt
-    roc.vals <- lapply(c(1,pred.prob.sort), function(i){
-        tp <- sum(pred.prob.sort>=i&actual.class.sort==class.levels[2])
-        fp <- sum(pred.prob.sort>=i&actual.class.sort==class.levels[1])
-        fn <- sum(pred.prob.sort<i&actual.class.sort==class.levels[2])
-        tn <- sum(pred.prob.sort<i&actual.class.sort==class.levels[1])
-        fpr <- fp/(fp+tn) # false-positive rate
-        tpr <- tp/(tp+fn) # true-positive rate
-        return(c(fpr,tpr))
-    })
-    fpr <- unlist(roc.vals)[c(T,F)] # fpr are odd elements
-    tpr <- unlist(roc.vals)[c(F,T)] # tpr are even elements
-    id <- order(fpr)
-    roc.auc <- sum(diff(fpr[id])*rollmean(tpr[id],2))
-    
-    roc.df <- data.frame(fpr = fpr,
-                         tpr = tpr
-                         )
-    p <- ggplot(roc.df, aes(x = fpr, y = tpr))
+    roc.df <- do.call(rbind, lapply(c('covar','full'), function(j){
+        pred <- get(paste0("pred.prob.", j, ".sorted"))
+        actual <- get(paste0("actual.class.", j, ".sorted"))
+        
+        roc.vals <- lapply(c(1,pred), function(i){
+            tp <- sum(pred>=i&actual==class.levels[2])
+            fp <- sum(pred>=i&actual==class.levels[1])
+            fn <- sum(pred<i&actual==class.levels[2])
+            tn <- sum(pred<i&actual==class.levels[1])
+            fpr <- fp/(fp+tn) # false-positive rate
+            tpr <- tp/(tp+fn) # true-positive rate
+            return(c(fpr,tpr))
+        })
+        fpr <- unlist(roc.vals)[c(T,F)] # fpr are odd elements
+        tpr <- unlist(roc.vals)[c(F,T)] # tpr are even elements
+        
+        tmp.df <- data.frame(fpr = fpr, tpr = tpr, type = j)
+        return(tmp.df)
+    }))
     
     if (!is.null(outFile)){pdf(fx_outFile(outFile))}
     
-    if (!is.null(permPerfObj)){
-        subtext <- paste0('AUC = ', signif(permPerfObj$df.pval['obs','auc.ROC'],3), 
-                          '; p-value = ', signif(permPerfObj$df.pval['pval','auc.ROC'],3))
-        if(permPerfObj$parameters$nkfcv){
-            captext <- paste0('N perm = ', nrow(permPerfObj$df.perm), '; nkfcv = ', permPerfObj$parameters$nkfcv)
-        } else if(is.numeric(permPerfObj$parameters$sample.type)){
-            captext <- paste0('N perm = ', nrow(permPerfObj$df.perm), 
-                              '; train group size = ', permPerfObj$parameters$sample.type,
-                              '; nresamples = ', permPerfObj$parameters$nresample)
-        }
-        else {
-            captext <- paste0('N perm = ', nrow(permPerfObj$df.perm))
-        }
-    } else {
-        subtext <- paste0('AUC: ', signif(out$auc,3), '; 95%CI (Delong): ', 
-                          signif(modelPerfObj$auc.95CI.delong[1], 3), '-', 
-                          signif(modelPerfObj$auc.95CI.delong[3], 3))
-        if(is.numeric(modelPerfObj$parameters$sample.type)){
-            captext <- paste0('N resamples = ', modelPerfObj$parameters$nresample, 
-                              '; train group size = ', modelPerfObj$parameters$sample.type
-            )
-        } else {
-            captext <- 'No null distribution'
-        }
-        
+    perm.exist <- !is.null(permPerfObj)
+    boot.exist <- !is.null(bootPerfObj)
+    if (perm.exist){
+        covar.obs <- signif(permPerfObj$df.pval['obs','auc.ROC.covar'],3)
+        full.obs <- signif(permPerfObj$df.pval['obs','auc.ROC.full'],3)
+        covar.p <- signif(permPerfObj$df.pval['pval','auc.ROC.covar'],3)
+        full.p <- signif(permPerfObj$df.pval['pval','auc.ROC.full'],3)
+        nperm <- permPerfObj$parameters$nperm
+    }
+    if(boot.exist){
+        covar.obs <- signif(bootPerfObj$df.pval['obs','auc.ROC.covar'],3)
+        full.obs <- signif(bootPerfObj$df.pval['obs','auc.ROC.full'],3)
+        covar.ci <- paste0('[',paste(signif(bootPerfObj$df.pval[c('2.5%', '97.5%'),'auc.ROC.covar'],3),collapse = ','),']')
+        full.ci <- paste0('[',paste(signif(bootPerfObj$df.pval[c('2.5%', '97.5%'),'auc.ROC.full'],3),collapse = ','),']')
+        nboot <- bootPerfObj$parameters$nboot
     }
     
+    subtext <- paste0('covar: ', covar.obs, ' ', covar.ci, ', p = ', covar.p, '; full: ', full.obs, ' ', full.ci, ', p = ', full.p)
+    captext <- paste0('nperm: ', nperm, '; nboot: ', nboot)
+    
+    p <- ggplot(data = roc.df, aes(x=fpr,y=tpr,group=type,color=type))
     print(p + 
               geom_segment(aes(x=0, y=0, xend=1, yend=1), color = 'gray', lwd = 2) +
-              geom_point(size = 2.5, color = 'blue') + 
-              geom_line(color = 'blue') + 
+              geom_line(lwd = 2)+
               labs(title = title.name,
                    subtitle = subtext,
                    x = 'False positive rate (1-specificity)',
                    y = 'True positive rate (sensitivity)',
-                   caption = captext) + 
+                   caption = captext,
+                   color = 'Model') + 
               theme(plot.title = element_text(hjust = 0.5),
                     plot.subtitle = element_text(hjust = 0.5),
                     plot.caption = element_text(hjust = 0.5))

@@ -767,17 +767,48 @@ fx_Plot <- function(perfObj, outFile = NULL){
 
     plots <- list()
     for (measure in measures){
-        subtext <- paste0(measure, ' = ', signif(perfObj$df.pval['obs', measure],3), '; p-value = ', signif(perfObj$df.pval['pval', measure],3))
+        if(obj.type == 'perm'){
+            
+            subtext <- paste0('obs: ', signif(perfObj$df.pval['obs', measure],3),
+                   ', p = ', signif(perfObj$df.pval['pval', measure],3))
+            
+        } else if(obj.type == 'boot'){
+            
+            if(grepl('^(auc.ROC)', measure)){
+                pval <- signif(ecdf(perfObj$df.iter[[measure]])(0.5),3)
+            } else {
+                pval <- 'NA'
+            }
+            
+            subtext <- paste0('obs: ', signif(perfObj$df.pval['obs', measure],3),
+                              ' [', signif(perfObj$df.pval['2.5%', measure],3),
+                              '; ', signif(perfObj$df.pval['97.5%', measure],3),
+                              '], boot-p = ', pval)
+            
+        }
+        
+        captext <- paste0('N ', obj.type, ' = ', nrow(perfObj$df.iter))
+        
+        if(!grepl('^(auc.ROC)', measure)){
+            captextEnd <- paste0('; dec. thresh = ', perfObj$parameters$decisionThreshold)
+        } else {
+            captextEnd <- NULL
+        }
 
         if(perfObj$parameters$nkfcv){
-            captext <- paste0('N ', obj.type, ' = ', nrow(perfObj$df.iter), '; nkfcv = ', perfObj$parameters$nkfcv)
+            captext <- paste0(captext, 
+                              '; nkfcv = ', perfObj$parameters$nkfcv,
+                              captextEnd)
+            
             perfValRange <- quantile(sapply(seq(length(mpo)), function(i){mpo[[i]]$accuracy}),probs = c(0.025, 0.975))
         } else if(is.numeric(perfObj$parameters$sample.type)){
-            captext <- paste0('N ', obj.type, ' = ', nrow(perfObj$df.iter),
+            captext <- paste0(captext,
                               '; train group size = ', perfObj$parameters$sample.type,
-                              '; nresamples = ', perfObj$parameters$nresample)
+                              '; nresamples = ', perfObj$parameters$nresample,
+                              captextEnd)
         } else {
-            captext <- paste0('N ', obj.type, ' = ', nrow(perfObj$df.iter))
+            captext <- paste0(captext, 
+                              captextEnd)
         }
 
         if(perfObj$parameters$model.type%in%regmodels){

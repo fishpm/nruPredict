@@ -634,6 +634,7 @@ fx_bootPerf <- function(modelPerfObj, bootObj, measures = NULL, compute.perf = '
     parameters <- modelPerfObj$parameters
     parameters$nboot <- length(bootObj)
     parameters$nkfcv <- F
+    parameters$compute.perf <- compute.perf
     
     regmodels <- c('regression')
     classmodels <- c('svm','rf','logistic')
@@ -686,6 +687,7 @@ fx_permPerf <- function(modelPerfObj, permObj, measures = NULL, nkfcv = F, compu
     }
     
     parameters$nperm <- length(permObj)
+    parameters$compute.perf <- compute.perf
     
     regmodels <- c('regression')
     classmodels <- c('svm','rf','logistic')
@@ -893,7 +895,17 @@ fx_permPlot <- function(permPerfObj, outFile = NULL){
     
 }
 
-fx_roc <- function(modelPerfObj, permPerfObj = NULL, bootPerfObj = NULL, title.name = NULL, outFile = NULL, compute.perf = 'within'){
+fx_rocPlot <- function(modelPerfObj, permPerfObj = NULL, bootPerfObj = NULL, title.name = NULL, compute.perf = 'within', outFile = NULL){
+    
+    perm.exist <- !is.null(permPerfObj)
+    print(paste0('perm.exist: ', perm.exist))
+    boot.exist <- !is.null(bootPerfObj)
+    print(paste0('boot.exist: ', boot.exist))
+    
+    regmodels <- c('regression')
+    if (modelPerfObj$parameters$model.type%in%regmodels){
+        stop('Cannot compute ROC for regression models')
+    }
     
     if(modelPerfObj$parameters$model.type=='svm'){
         stop('Cannot perform ROC on SVM model')
@@ -930,25 +942,57 @@ fx_roc <- function(modelPerfObj, permPerfObj = NULL, bootPerfObj = NULL, title.n
     
     if (!is.null(outFile)){pdf(fx_outFile(outFile))}
     
-    perm.exist <- !is.null(permPerfObj)
-    boot.exist <- !is.null(bootPerfObj)
-    if (perm.exist){
+    if(perm.exist&boot.exist){
+        
+        covar.obs <- signif(permPerfObj$df.pval['obs','auc.ROC.covar'],3)
+        full.obs <- signif(permPerfObj$df.pval['obs','auc.ROC.full'],3)
+        covar.p <- signif(permPerfObj$df.pval['pval','auc.ROC.covar'],3)
+        full.p <- signif(permPerfObj$df.pval['pval','auc.ROC.full'],3)
+        covar.ci <- paste0('[',paste(signif(bootPerfObj$df.pval[c('2.5%', '97.5%'),'auc.ROC.covar'],3),collapse = ','),']')
+        full.ci <- paste0('[',paste(signif(bootPerfObj$df.pval[c('2.5%', '97.5%'),'auc.ROC.full'],3),collapse = ','),']')
+        nperm <- permPerfObj$parameters$nperm
+        nboot <- bootPerfObj$parameters$nboot
+        
+        subtext <- paste0('covar: ', covar.obs, ' ', covar.ci, ', p = ', covar.p, '; full: ', full.obs, ' ', full.ci, ', p = ', full.p)
+        captext <- paste0('nperm: ', nperm, '; nboot: ', nboot)
+        
+    } else if(perm.exist&!boot.exist){
+        
         covar.obs <- signif(permPerfObj$df.pval['obs','auc.ROC.covar'],3)
         full.obs <- signif(permPerfObj$df.pval['obs','auc.ROC.full'],3)
         covar.p <- signif(permPerfObj$df.pval['pval','auc.ROC.covar'],3)
         full.p <- signif(permPerfObj$df.pval['pval','auc.ROC.full'],3)
         nperm <- permPerfObj$parameters$nperm
-    }
-    if(boot.exist){
+        
+        subtext <- paste0('covar: ', covar.obs, ' 95% CI NA, p = ', covar.p, '; full: ', full.obs, ' 95% CI NA, p = ', full.p)
+        captext <- paste0('nperm: ', nperm, '; nboot: NA')
+        
+    } else if(!perm.exist&boot.exist){
+        
         covar.obs <- signif(bootPerfObj$df.pval['obs','auc.ROC.covar'],3)
         full.obs <- signif(bootPerfObj$df.pval['obs','auc.ROC.full'],3)
+        covar.p <- signif(ecdf(bootPerfObj$df.iter$auc.ROC.covar)(0.5),3)
+        full.p <- signif(ecdf(bootPerfObj$df.iter$auc.ROC.full)(0.5),3)
         covar.ci <- paste0('[',paste(signif(bootPerfObj$df.pval[c('2.5%', '97.5%'),'auc.ROC.covar'],3),collapse = ','),']')
         full.ci <- paste0('[',paste(signif(bootPerfObj$df.pval[c('2.5%', '97.5%'),'auc.ROC.full'],3),collapse = ','),']')
         nboot <- bootPerfObj$parameters$nboot
+        
+        subtext <- paste0('covar: ', covar.obs, ' ', covar.ci, ', boot-p = ', covar.p, '; full: ', full.obs, ' ', full.ci, ', boot-p = ', full.p)
+        captext <- paste0('nperm: NA; nboot: ', nboot)
+        
+    } else if(!perm.exist&&!boot.exist&&!is.null(compute.perf)){
+        
+        covar.obs <- signif(modelPerfObj$perfMetrics[modelPerfObj$perfMetrics$fold==compute.perf,'auc.ROC.covar'],3)
+        full.obs <- signif(modelPerfObj$perfMetrics[modelPerfObj$perfMetrics$fold==compute.perf,'auc.ROC.full'],3)
+        
+        subtext <- paste0('covar: ', covar.obs, ' 95% CI NA, p = NA; full: ', full.obs, ' 95% CI NA, p = NA')
+        captext <- 'nperm: NA; nboot: NA'
+        
+    } else {
+        subtext <- NULL
+        captext <- NULL
     }
     
-    subtext <- paste0('covar: ', covar.obs, ' ', covar.ci, ', p = ', covar.p, '; full: ', full.obs, ' ', full.ci, ', p = ', full.p)
-    captext <- paste0('nperm: ', nperm, '; nboot: ', nboot)
     
     p <- ggplot(data = roc.df, aes(x=fpr,y=tpr,group=type,color=type))
     print(p + 
@@ -1005,7 +1049,7 @@ writeLines('\tfx_boot: Bootstrap confidence intervals')
 writeLines('\tfx_permPerf: Estimate p-values, organize null distributions')
 writeLines('\tfx_bootPerf: Estimate CIs and p-values from bootstrap distributions')
 writeLines('\tfx_permPlot: Plot observed vs. null distributions')
-writeLines('\tfx_roc: Estimate and plot ROC')
+writeLines('\tfx_rocPlot: Estimate and plot ROC')
 writeLines('\tfx_outFile: Handles specified output files')
 writeLines('\tfx_summary: Produces .txt summary of model info (incomplete)')
 

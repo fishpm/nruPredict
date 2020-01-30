@@ -743,8 +743,7 @@ fx_permPerf <- function(modelPerfObj, permObj, measures = NULL, nkfcv = F, compu
     
 }
 
-# update to fx_permPlot
-fx_Plot <- function(perfObj, outFile = NULL){
+fx_plot <- function(perfObj, outFile = NULL){
 
     obj.type <- if('nperm'%in%names(perfObj$parameters)){
         obj.type <- 'perm'
@@ -850,80 +849,6 @@ fx_Plot <- function(perfObj, outFile = NULL){
         dev.off()
     }
 
-}
-
-fx_permPlot <- function(permPerfObj, outFile = NULL){
-    
-    measures <- colnames(permPerfObj$df.perm)[colnames(permPerfObj$df.perm)!='fold']
-    regmodels <- c('regression')
-    classmodels <- c('svm','rf','logistic')
-    if(permPerfObj$parameters$model.type%in%regmodels){
-        measures <- colnames(permPerfObj$df.perm)[colnames(permPerfObj$df.perm)!='fold']
-    } else if(permPerfObj$parameters$model.type%in%classmodels){
-        measures <- c("sens.covar", "spec.covar", "acc.covar", "auc.ROC.covar", "sens.full", "spec.full", "acc.full", "auc.ROC.full")
-    }
-    
-    if(!is.null(outFile)){
-        pdf(fx_outFile(outFile))
-    }
-
-    plots <- list()
-    for (measure in measures){
-        subtext <- paste0(measure, ' = ', signif(permPerfObj$df.pval['obs', measure],3), '; p-value = ', signif(permPerfObj$df.pval['pval', measure],3))
-        
-        if(permPerfObj$parameters$nkfcv){
-            captext <- paste0('N perm = ', nrow(permPerfObj$df.perm), '; nkfcv = ', permPerfObj$parameters$nkfcv)
-            perfValRange <- quantile(sapply(seq(length(mpo)), function(i){mpo[[i]]$accuracy}),probs = c(0.025, 0.975))
-        } else if(is.numeric(permPerfObj$parameters$sample.type)){
-            captext <- paste0('N perm = ', nrow(permPerfObj$df.perm), 
-                              '; train group size = ', permPerfObj$parameters$sample.type,
-                              '; nresamples = ', permPerfObj$parameters$nresample)
-        }
-        else {
-            captext <- paste0('N perm = ', nrow(permPerfObj$df.perm))
-        }
-        
-        regmodels <- c('regression')
-        classmodels <- c('svm','rf','logistic')
-        if(permPerfObj$parameters$model.type%in%regmodels){
-            plots[[length(plots)+1]] <-
-                ggplot(data = permPerfObj$df.perm, aes_string(x=measure)) +
-                geom_histogram(fill = 'darkblue') +
-                geom_vline(data = permPerfObj$df.pval['obs',], aes_string(xintercept=measure),
-                           color = 'darkorange', linetype = 'dashed', size = 2) +
-                scale_y_continuous(name='Frequency') +
-                labs(title = measure,
-                     subtitle = subtext,
-                     caption = captext) +
-                theme(plot.title = element_text(hjust = 0.5),
-                      plot.subtitle = element_text(hjust = 0.5),
-                      plot.caption = element_text(hjust = 0.5))
-            
-        } else if(permPerfObj$parameters$model.type%in%classmodels){
-            plots[[length(plots)+1]] <-
-                ggplot(data = permPerfObj$df.perm, aes_string(x=measure)) +
-                geom_histogram(fill = 'darkblue') +
-                geom_vline(data = permPerfObj$df.pval['obs',], aes_string(xintercept=measure),
-                           color = 'darkorange', linetype = 'dashed', size = 2) +
-                scale_x_continuous(limits=c(0,1)) +
-                scale_y_continuous(name='Frequency') +
-                labs(title = measure,
-                     subtitle = subtext,
-                     caption = captext) +
-                theme(plot.title = element_text(hjust = 0.5),
-                      plot.subtitle = element_text(hjust = 0.5),
-                      plot.caption = element_text(hjust = 0.5))
-        }
-        
-    }
-    
-    suppressMessages(print(plots))
-
-    if (!is.null(outFile)){
-        writeLines(paste0('Output file written: ', fx_outFile(outFile)))
-        dev.off()
-    }
-    
 }
 
 fx_rocPlot <- function(modelPerfObj, permPerfObj = NULL, bootPerfObj = NULL, title.name = NULL, compute.perf = 'within', outFile = NULL){
@@ -1079,7 +1004,7 @@ writeLines('\tfx_perm: Derive null distribution')
 writeLines('\tfx_boot: Bootstrap confidence intervals')
 writeLines('\tfx_permPerf: Estimate p-values, organize null distributions')
 writeLines('\tfx_bootPerf: Estimate CIs and p-values from bootstrap distributions')
-writeLines('\tfx_permPlot: Plot observed vs. null distributions')
+writeLines('\tfx_Plot: Plot observed vs. null/bootstrap distributions')
 writeLines('\tfx_rocPlot: Estimate and plot ROC')
 writeLines('\tfx_outFile: Handles specified output files')
 writeLines('\tfx_summary: Produces .txt summary of model info (incomplete)')

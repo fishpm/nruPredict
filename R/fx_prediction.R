@@ -262,18 +262,6 @@ fx_modelPerf <- function(modelOutput, decisionThreshold = 0.5, many = T, perm = 
 
     if (!many) {
         
-        parameters <- modelOutput$parameters
-        actual.class <- modelOutput$actual.class
-        pred.prob <- modelOutput$pred.prob
-        class.levels <- modelOutput$parameters$class.levels
-        
-        if(!parameters$model.type=='svm'){
-            pred.class <- class.levels[(pred.prob > decisionThreshold)+1]
-        } else {
-            pred.class <- modelOutput$pred.class
-            decisionThreshold <- NA
-        }
-        
     } else {
         
         nmodels <- length(modelOutput)
@@ -390,14 +378,18 @@ fx_modelPerf <- function(modelOutput, decisionThreshold = 0.5, many = T, perm = 
             perfMetrics$acc.covar <- (perfMetrics$TP.covar + perfMetrics$TN.covar)/sum(cmat.covar)
             
             if(!all(is.na(df.tmp$pred.prob.covar))){
-                perfMetrics$auc.ROC.covar <- fx_rocCompute(pred.prob = df.tmp$pred.prob.covar,
-                                                     actual.class = df.tmp$actual.class,
-                                                     class.levels = class.levels)
-                perfMetrics$auc.ROC.full <- fx_rocCompute(pred.prob = df.tmp$pred.prob.full,
-                                                           actual.class = df.tmp$actual.class,
-                                                           class.levels = class.levels)
+                rocCompute.covar <- fx_rocCompute(pred.prob = df.tmp$pred.prob.covar,
+                                                  actual.class = df.tmp$actual.class,
+                                                  class.levels = class.levels)
+                rocCompute.full <- fx_rocCompute(pred.prob = df.tmp$pred.prob.full,
+                                                  actual.class = df.tmp$actual.class,
+                                                  class.levels = class.levels)
+                perfMetrics$auc.ROC.covar <- rocCompute.covar$roc.auc
+                perfMetrics$auc.ROC.full <- rocCompute.full$roc.auc
+                perfMetrics$optThresh.covar <- rocCompute.covar$optimal.threshold
+                perfMetrics$optThresh.full <- rocCompute.full$optimal.threshold
             } else {
-                perfMetrics$auc.ROC.covar <- perfMetrics$auc.ROC.full <- NA
+                perfMetrics$auc.ROC.covar <- perfMetrics$auc.ROC.full <- perfMetrics$optThresh.covar <- perfMetrics$optThresh.full <- NA
             }
             
             perfMetrics$TP.full <- cmat.full[parameters$positive.class, parameters$positive.class]
@@ -461,11 +453,18 @@ fx_rocCompute <- function(pred.prob, actual.class, class.levels){
         tpr <- tp/(tp+fn) # true-positive rate
         return(c(fpr,tpr))
     })
+    
+    roc.df <- data.frame(do.call(rbind, roc.vals))
+    colnames(roc.df) <- c('fpr','tpr')
+    roc.df$thresh <- c(1,pred.prob.sort)
+    roc.df$tldist <- sqrt(((1-roc.df$tpr)**2)+(roc.df$fpr**2))
+    # thresh.range <- c(ceiling(roc.df$thresh[which(roc.df$tldist==min(roc.df$tldist))+1]*1000)/1000, floor(roc.df$thresh[roc.df$tldist==min(roc.df$tldist)]*1000)/1000)
+    optimal.threshold <- signif(mean(roc.df$thresh[roc.df$tldist==min(roc.df$tldist)]),3)
     fpr <- unlist(roc.vals)[c(T,F)] # fpr are odd elements
     tpr <- unlist(roc.vals)[c(F,T)] # tpr are even elements
     id <- order(fpr)
     roc.auc <- sum(diff(fpr[id])*rollmean(tpr[id],2))
-    return(roc.auc)
+    return(list(roc.auc=roc.auc,optimal.threshold=optimal.threshold))
 }
 
 fx_cmatrix <- function(actual.class, pred.class, pred.prob = NULL, parameters = NULL){
@@ -642,7 +641,7 @@ fx_bootPerf <- function(modelPerfObj, bootObj, measures = NULL, compute.perf = '
     if(parameters$model.type%in%regmodels){
         measuresSet <- c('rmse', 'rsq')
     } else if(parameters$model.type%in%classmodels) {
-        measuresSet <- c('acc', 'auc.ROC', 'sens', 'spec', 'ppv', 'npv')
+        measuresSet <- c('acc', 'auc.ROC', 'sens', 'spec', 'ppv', 'npv', 'optThresh')
     }
     
     if(is.null(measures)){
@@ -851,12 +850,15 @@ fx_plot <- function(perfObj, outFile = NULL){
 
 }
 
-fx_rocPlot <- function(modelPerfObj, permPerfObj = NULL, bootPerfObj = NULL, title.name = NULL, compute.perf = 'within', outFile = NULL){
+fx_rocPlot <- function(modelPerfObj, permPerfObj = NULL, bootPerfObj = NULL, title.name = NULL, compute.perf = 'within', plot.covar = T, plot.full = T, outFile = NULL){
+    
+    
+    if(!plot.covar&!plot.full){
+        stop('Why plot nothing?')
+    }
     
     perm.exist <- !is.null(permPerfObj)
-    print(paste0('perm.exist: ', perm.exist))
     boot.exist <- !is.null(bootPerfObj)
-    print(paste0('boot.exist: ', boot.exist))
     
     regmodels <- c('regression')
     if (modelPerfObj$parameters$model.type%in%regmodels){
@@ -876,7 +878,8 @@ fx_rocPlot <- function(modelPerfObj, permPerfObj = NULL, bootPerfObj = NULL, tit
     class.levels <- modelPerfObj$parameters$class.levels
     
     # generate fpr and tpr values and plt
-    roc.df <- do.call(rbind, lapply(c('covar','full'), function(j){
+    # c('covar','full')
+    roc.df <- do.call(rbind, lapply(c('covar','full')[c(plot.covar,plot.full)], function(j){
         pred <- get(paste0("pred.prob.", j, ".sorted"))
         actual <- get(paste0("actual.class.", j, ".sorted"))
         
@@ -909,7 +912,14 @@ fx_rocPlot <- function(modelPerfObj, permPerfObj = NULL, bootPerfObj = NULL, tit
         nperm <- permPerfObj$parameters$nperm
         nboot <- bootPerfObj$parameters$nboot
         
-        subtext <- paste0('covar: ', covar.obs, ' ', covar.ci, ', p = ', covar.p, '; full: ', full.obs, ' ', full.ci, ', p = ', full.p)
+        if(plot.covar&plot.full){
+            subtext <- paste0('covar: ', covar.obs, ' ', covar.ci, ', p = ', covar.p, '; full: ', full.obs, ' ', full.ci, ', p = ', full.p)
+        } else if(plot.covar&!plot.full){
+            subtext <- paste0('covar: ', covar.obs, ' ', covar.ci, ', p = ', covar.p)
+        } else if(!plot.covar&plot.full){
+            subtext <- paste0('full: ', full.obs, ' ', full.ci, ', p = ', full.p)
+        }
+        
         captext <- paste0('nperm: ', nperm, '; nboot: ', nboot)
         
     } else if(perm.exist&!boot.exist){
@@ -933,7 +943,14 @@ fx_rocPlot <- function(modelPerfObj, permPerfObj = NULL, bootPerfObj = NULL, tit
         full.ci <- paste0('[',paste(signif(bootPerfObj$df.pval[c('2.5%', '97.5%'),'auc.ROC.full'],3),collapse = ','),']')
         nboot <- bootPerfObj$parameters$nboot
         
-        subtext <- paste0('covar: ', covar.obs, ' ', covar.ci, ', boot-p = ', covar.p, '; full: ', full.obs, ' ', full.ci, ', boot-p = ', full.p)
+        if(plot.covar&plot.full){
+            subtext <- paste0('covar: ', covar.obs, ' ', covar.ci, ', boot-p = ', covar.p, '; full: ', full.obs, ' ', full.ci, ', boot-p = ', full.p)
+        } else if(plot.covar&!plot.full){
+            subtext <- paste0('covar: ', covar.obs, ' ', covar.ci, ', boot-p = ', covar.p)
+        } else if(!plot.covar&plot.full){
+            subtext <- paste0('full: ', full.obs, ' ', full.ci, ', boot-p = ', full.p)
+        }
+        
         captext <- paste0('nperm: NA; nboot: ', nboot)
         
     } else if(!perm.exist&&!boot.exist&&!is.null(compute.perf)){
@@ -941,7 +958,14 @@ fx_rocPlot <- function(modelPerfObj, permPerfObj = NULL, bootPerfObj = NULL, tit
         covar.obs <- signif(modelPerfObj$perfMetrics[modelPerfObj$perfMetrics$fold==compute.perf,'auc.ROC.covar'],3)
         full.obs <- signif(modelPerfObj$perfMetrics[modelPerfObj$perfMetrics$fold==compute.perf,'auc.ROC.full'],3)
         
-        subtext <- paste0('covar: ', covar.obs, ' 95% CI NA, p = NA; full: ', full.obs, ' 95% CI NA, p = NA')
+        if(plot.covar&plot.full){
+            subtext <- paste0('covar: ', covar.obs, ' 95% CI NA, p = NA; full: ', full.obs, ' 95% CI NA, p = NA')
+        } else if(plot.covar&!plot.full){
+            subtext <- paste0('covar: ', covar.obs, ' 95% CI NA, p = NA')
+        } else if(!plot.covar&plot.full){
+            subtext <- paste0('full: ', full.obs, ' 95% CI NA, p = NA')
+        }
+        
         captext <- 'nperm: NA; nboot: NA'
         
     } else {
@@ -1004,15 +1028,11 @@ writeLines('\tfx_perm: Derive null distribution')
 writeLines('\tfx_boot: Bootstrap confidence intervals')
 writeLines('\tfx_permPerf: Estimate p-values, organize null distributions')
 writeLines('\tfx_bootPerf: Estimate CIs and p-values from bootstrap distributions')
-writeLines('\tfx_Plot: Plot observed vs. null/bootstrap distributions')
+writeLines('\tfx_plot: Plot observed vs. null/bootstrap distributions')
 writeLines('\tfx_rocPlot: Estimate and plot ROC')
 writeLines('\tfx_outFile: Handles specified output files')
 writeLines('\tfx_summary: Produces .txt summary of model info (incomplete)')
 
 ## TODO
-# are fx_roc and fx_rocCompute redundant?
 # fill out fx_summary
-# when fx_plot finished, remove fx_permPlot
-# p-values from bootstrap, do i believe them?
-
 

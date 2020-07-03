@@ -129,8 +129,13 @@ fx_model <- function(df.set, covar = NULL, voi = NULL, outcome = NULL, model.typ
         stop(paste0('Specify appropriate model type. Choose from: ', paste0(model.set, collapse = ', ')))
     } else {model.type <- tolower(model.type)}
     
-    formula.covar <- as.formula(paste0(
-        outcome, ' ~ ', paste(covar, collapse = '+')))
+    if(!is.null(covar)){
+        formula.covar <- as.formula(paste0(
+            outcome, ' ~ ', paste(covar, collapse = '+')))
+    } else {
+        formula.covar <- NULL
+    }
+    
     formula.full <- as.formula(paste0(
         outcome, ' ~ ', paste(c(covar,voi), collapse = '+')))
     
@@ -179,57 +184,90 @@ fx_model <- function(df.set, covar = NULL, voi = NULL, outcome = NULL, model.typ
     # Apply and predict model
     if (model.type == 'logistic'){
         
-        model.covar <- glm(formula.covar, data = df.train, family = 'binomial')
-        pred.covar <- data.frame(pred.class = rep(NA, nrow(df.test)),
-                                 pred.prob = predict(model.covar, newdata = df.test, type = 'resp'),
-                                 actual.class = as.character(df.set$df.test[,outcome])
-                                 )
-        
         model.full <- glm(formula.full, data = df.train, family = 'binomial')
         pred.full <- data.frame(pred.class = rep(NA, nrow(df.test)),
                                 pred.prob = predict(model.full, newdata = df.test, type = 'resp'),
                                 actual.class = as.character(df.set$df.test[,outcome])
-                                )
+        )
+        
+        if(!is.null(covar)){
+            model.covar <- glm(formula.covar, data = df.train, family = 'binomial')
+            pred.covar <- data.frame(pred.class = rep(NA, nrow(df.test)),
+                                     pred.prob = predict(model.covar, newdata = df.test, type = 'resp'),
+                                     actual.class = as.character(df.set$df.test[,outcome])
+            )
+        } else {
+            model.covar <- NULL
+            pred.covar <- pred.full
+            pred.covar$pred.class <- NA
+            pred.covar$pred.prob <- NA
+        }
+        
+        
         
     } else if (model.type == 'rf'){
-        
-        model.covar <- randomForest(formula.covar, data = df.train)
-        pred.covar <- data.frame(pred.class = rep(NA, nrow(df.test)),
-                                 pred.prob = predict(model.covar, 
-                                                     newdata = df.test, 
-                                                     type = 'prob')[,parameters$class.levels[2]],
-                                 actual.class = as.character(df.set$df.test[,outcome]))
         
         model.full <- randomForest(formula.full, data = df.train)
         pred.full <- data.frame(pred.class = rep(NA, nrow(df.test)),
                                 pred.prob = predict(model.full, 
-                                                     newdata = df.test, 
-                                                     type = 'prob')[,parameters$class.levels[2]],
+                                                    newdata = df.test, 
+                                                    type = 'prob')[,parameters$class.levels[2]],
                                 actual.class = as.character(df.set$df.test[,outcome]))
         
-    } else if (model.type == 'svm'){
+        if(!is.null(covar)){
+            model.covar <- randomForest(formula.covar, data = df.train)
+            pred.covar <- data.frame(pred.class = rep(NA, nrow(df.test)),
+                                     pred.prob = predict(model.covar, 
+                                                         newdata = df.test, 
+                                                         type = 'prob')[,parameters$class.levels[2]],
+                                     actual.class = as.character(df.set$df.test[,outcome]))
+        } else {
+            model.covar <- NULL
+            pred.covar <- pred.full
+            pred.covar$pred.class <- NA
+            pred.covar$pred.prob <- NA
+        }
         
-        model.covar <- svm(formula.covar, data = df.train)
-        pred.covar <- data.frame(pred.class = as.character(predict(model.covar, newdata = df.test)),
-                                 pred.prob = rep(NA, nrow(df.test)),
-                                 actual.class = as.character(df.set$df.test[,outcome]))
+        
+        
+    } else if (model.type == 'svm'){
         
         model.full <- svm(formula.full, data = df.train)
         pred.full <- data.frame(pred.class = as.character(predict(model.full, newdata = df.test)),
                                 pred.prob = rep(NA, nrow(df.test)),
                                 actual.class = as.character(df.set$df.test[,outcome]))
         
-    } else if (model.type == 'regression'){
+        if(!is.null(covar)){
+            model.covar <- svm(formula.covar, data = df.train)
+            pred.covar <- data.frame(pred.class = as.character(predict(model.covar, newdata = df.test)),
+                                     pred.prob = rep(NA, nrow(df.test)),
+                                     actual.class = as.character(df.set$df.test[,outcome]))
+        } else {
+            model.covar <- NULL
+            pred.covar <- pred.full
+            pred.covar$pred.class <- NA
+            pred.covar$pred.prob <- NA
+        }
         
-        model.covar <- lm(formula.covar, data = df.train)
-        pred.covar <- data.frame(pred.values = predict(model.covar, newdata = df.test),
-                                 actual.values = df.set$df.test[,outcome],
-                                 rsq = summary(model.covar)$r.squared)
+    } else if (model.type == 'regression'){
         
         model.full <- lm(formula.full, data = df.train)
         pred.full <- data.frame(pred.values = predict(model.full, newdata = df.test),
                                 actual.values = df.set$df.test[,outcome],
                                 rsq = summary(model.full)$r.squared)
+        
+        if(!is.null(covar)){
+            model.covar <- lm(formula.covar, data = df.train)
+            pred.covar <- data.frame(pred.values = predict(model.covar, newdata = df.test),
+                                     actual.values = df.set$df.test[,outcome],
+                                     rsq = summary(model.covar)$r.squared)
+        } else {
+            model.covar <- NULL
+            pred.covar <- pred.full
+            pred.covar$pred.values <- NA
+            pred.covar$actual.values <- NA
+            pred.covar$rsq <- NA
+        }
         
     }
     
@@ -291,6 +329,8 @@ fx_modelPerf <- function(modelOutput, decisionThreshold = 0.5, many = T, perm = 
             
             df.allfolds <- do.call(rbind, lapply(
                 lapply(seq(nmodels), function(j){
+                    
+                    
                     return(list(orig.df.row = modelOutput[[j]]$parameters$test.rows,
                                 fold = rep(j,length(modelOutput[[j]]$parameters$test.rows)),
                                 pred.prob.covar = modelOutput[[j]]$pred.covar$pred.prob,
@@ -326,17 +366,34 @@ fx_modelPerf <- function(modelOutput, decisionThreshold = 0.5, many = T, perm = 
         }
         
         if(parameters$model.type%in%regmodels){
-            foldrsq.covar <- sapply(seq(nmodels), function(j){modelOutput[[j]]$pred.covar$rsq[1]})
-            foldrsq.full <- sapply(seq(nmodels), function(j){modelOutput[[j]]$pred.full$rsq[1]})
             
-            rmse.covar <- sqrt(mean((df.tmp$pred.values.covar-df.tmp$actual.values)**2))
+            foldrsq.full <- sapply(seq(nmodels), function(j){modelOutput[[j]]$pred.full$rsq[1]})
             rmse.full <- sqrt(mean((df.tmp$pred.values.full-df.tmp$actual.values)**2))
-            if(i=='across'){
-                rsq.covar <- mean(foldrsq.covar)
-                rsq.full <- mean(foldrsq.full)
+            if(!is.null(parameters$covar)){
+                foldrsq.covar <- sapply(seq(nmodels), function(j){modelOutput[[j]]$pred.covar$rsq[1]})
+                rmse.covar <- sqrt(mean((df.tmp$pred.values.covar-df.tmp$actual.values)**2))
             } else {
-                rsq.covar <- foldrsq.covar[as.numeric(i)]
+                foldrsq.covar <- rep(NA,seq(nmodels))
+                rmse.covar <- NA
+            }
+            
+            if(i=='across'){
+                
+                rsq.full <- mean(foldrsq.full)
+                if(!is.null(parameters$covar)){
+                    rsq.covar <- mean(foldrsq.covar)
+                } else {
+                    rsq.covar <- NA
+                }
+                
+            } else {
+                
                 rsq.full <- foldrsq.full[as.numeric(i)]
+                if(!is.null(parameters$covar)){
+                    rsq.covar <- foldrsq.covar[as.numeric(i)]
+                } else {
+                    rsq.covar <- NA
+                }
             }
             
             perfMetrics <- data.frame(rmse.covar = rmse.covar,
@@ -347,17 +404,7 @@ fx_modelPerf <- function(modelOutput, decisionThreshold = 0.5, many = T, perm = 
                    
         } else if(parameters$model.type%in%classmodels){
             
-            cmat.covar <- cmat.full <- matrix(0,nrow=2,ncol=2,dimnames=list(class.levels,class.levels))
-            
-            cmat.covar[class.levels[1],class.levels[1]] <-
-                sum(df.tmp$pred.class.covar==class.levels[1] & df.tmp$actual.class==class.levels[1])
-            cmat.covar[class.levels[2],class.levels[1]] <-
-                sum(df.tmp$pred.class.covar==class.levels[2] & df.tmp$actual.class==class.levels[1])
-            cmat.covar[class.levels[1],class.levels[2]] <-
-                sum(df.tmp$pred.class.covar==class.levels[1] & df.tmp$actual.class==class.levels[2])
-            cmat.covar[class.levels[2],class.levels[2]] <-
-                sum(df.tmp$pred.class.covar==class.levels[2] & df.tmp$actual.class==class.levels[2])
-            
+            cmat.full <- matrix(0,nrow=2,ncol=2,dimnames=list(class.levels,class.levels))
             cmat.full[class.levels[1],class.levels[1]] <-
                 sum(df.tmp$pred.class.full==class.levels[1] & df.tmp$actual.class==class.levels[1])
             cmat.full[class.levels[2],class.levels[1]] <-
@@ -366,6 +413,20 @@ fx_modelPerf <- function(modelOutput, decisionThreshold = 0.5, many = T, perm = 
                 sum(df.tmp$pred.class.full==class.levels[1] & df.tmp$actual.class==class.levels[2])
             cmat.full[class.levels[2],class.levels[2]] <-
                 sum(df.tmp$pred.class.full==class.levels[2] & df.tmp$actual.class==class.levels[2])
+            
+            if(!is.null(parameters$covar)){
+                cmat.covar <- matrix(0,nrow=2,ncol=2,dimnames=list(class.levels,class.levels))
+                cmat.covar[class.levels[1],class.levels[1]] <-
+                    sum(df.tmp$pred.class.covar==class.levels[1] & df.tmp$actual.class==class.levels[1])
+                cmat.covar[class.levels[2],class.levels[1]] <-
+                    sum(df.tmp$pred.class.covar==class.levels[2] & df.tmp$actual.class==class.levels[1])
+                cmat.covar[class.levels[1],class.levels[2]] <-
+                    sum(df.tmp$pred.class.covar==class.levels[1] & df.tmp$actual.class==class.levels[2])
+                cmat.covar[class.levels[2],class.levels[2]] <-
+                    sum(df.tmp$pred.class.covar==class.levels[2] & df.tmp$actual.class==class.levels[2])
+            } else {
+                cmat.covar <- matrix(NA,nrow=2,ncol=2,dimnames=list(class.levels,class.levels))
+            }
             
             perfMetrics <- data.frame(TP.covar = cmat.covar[parameters$positive.class, parameters$positive.class],
                                       FP.covar = cmat.covar[parameters$positive.class, parameters$negative.class],
@@ -377,19 +438,25 @@ fx_modelPerf <- function(modelOutput, decisionThreshold = 0.5, many = T, perm = 
             perfMetrics$npv.covar <- perfMetrics$TN.covar/(perfMetrics$TN.covar + perfMetrics$FN.covar)
             perfMetrics$acc.covar <- (perfMetrics$TP.covar + perfMetrics$TN.covar)/sum(cmat.covar)
             
-            if(!all(is.na(df.tmp$pred.prob.covar))){
+            if(!is.null(parameters$covar)){
                 rocCompute.covar <- fx_rocCompute(pred.prob = df.tmp$pred.prob.covar,
                                                   actual.class = df.tmp$actual.class,
                                                   class.levels = class.levels)
+                perfMetrics$auc.ROC.covar <- rocCompute.covar$roc.auc
+                perfMetrics$optThresh.covar <- rocCompute.covar$optimal.threshold
+            } else {
+                perfMetrics$auc.ROC.covar <- perfMetrics$optThresh.covar <- NA
+            }
+            
+            if(!all(is.na(df.tmp$pred.prob.full))){
                 rocCompute.full <- fx_rocCompute(pred.prob = df.tmp$pred.prob.full,
                                                   actual.class = df.tmp$actual.class,
                                                   class.levels = class.levels)
-                perfMetrics$auc.ROC.covar <- rocCompute.covar$roc.auc
+                
                 perfMetrics$auc.ROC.full <- rocCompute.full$roc.auc
-                perfMetrics$optThresh.covar <- rocCompute.covar$optimal.threshold
                 perfMetrics$optThresh.full <- rocCompute.full$optimal.threshold
             } else {
-                perfMetrics$auc.ROC.covar <- perfMetrics$auc.ROC.full <- perfMetrics$optThresh.covar <- perfMetrics$optThresh.full <- NA
+                perfMetrics$auc.ROC.full <- perfMetrics$optThresh.full <- NA
             }
             
             perfMetrics$TP.full <- cmat.full[parameters$positive.class, parameters$positive.class]
@@ -435,7 +502,11 @@ fx_modelPerf <- function(modelOutput, decisionThreshold = 0.5, many = T, perm = 
         
     }
     
-    return(list(perfMetrics = perfMetrics, parameters = parameters, cmat.covar = cmat.covar, cmat.full = cmat.full, df.allfolds = df.allfolds))
+    return(list(perfMetrics = perfMetrics, 
+                parameters = parameters, 
+                cmat.covar = cmat.covar, 
+                cmat.full = cmat.full, 
+                df.allfolds = df.allfolds))
 }
 
 fx_rocCompute <- function(pred.prob, actual.class, class.levels){
@@ -765,6 +836,7 @@ fx_plot <- function(perfObj, outFile = NULL){
 
     plots <- list()
     for (measure in measures){
+
         if(obj.type == 'perm'){
             
             subtext <- paste0('obs: ', signif(perfObj$df.pval['obs', measure],3),
@@ -860,6 +932,8 @@ fx_rocPlot <- function(modelPerfObj, permPerfObj = NULL, bootPerfObj = NULL, tit
     perm.exist <- !is.null(permPerfObj)
     boot.exist <- !is.null(bootPerfObj)
     
+    parameters <- modelPerfObj$parameters
+    
     regmodels <- c('regression')
     if (modelPerfObj$parameters$model.type%in%regmodels){
         stop('Cannot compute ROC for regression models')
@@ -895,7 +969,7 @@ fx_rocPlot <- function(modelPerfObj, permPerfObj = NULL, bootPerfObj = NULL, tit
         fpr <- unlist(roc.vals)[c(T,F)] # fpr are odd elements
         tpr <- unlist(roc.vals)[c(F,T)] # tpr are even elements
         
-        tmp.df <- data.frame(fpr = fpr, tpr = tpr, type = j)
+        tmp.df <- data.frame(fpr = c(0,fpr), tpr = c(0,tpr), type = j)
         return(tmp.df)
     }))
     
@@ -925,8 +999,8 @@ fx_rocPlot <- function(modelPerfObj, permPerfObj = NULL, bootPerfObj = NULL, tit
     } else if(perm.exist&!boot.exist){
         
         covar.obs <- signif(permPerfObj$df.pval['obs','auc.ROC.covar'],3)
-        full.obs <- signif(permPerfObj$df.pval['obs','auc.ROC.full'],3)
         covar.p <- signif(permPerfObj$df.pval['pval','auc.ROC.covar'],3)
+        full.obs <- signif(permPerfObj$df.pval['obs','auc.ROC.full'],3)
         full.p <- signif(permPerfObj$df.pval['pval','auc.ROC.full'],3)
         nperm <- permPerfObj$parameters$nperm
         

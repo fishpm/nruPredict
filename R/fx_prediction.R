@@ -12,34 +12,34 @@ require('zoo')
 ## DEFINE FUNCTIONS
 ####
 
-fx_scramble <- function(df, outcome, boot = F, outcome.class = T){
+fx_scramble <- function(df0, outcome, resample = F, outcome.class = T){
     if(is.null(outcome)){
         stop('Specify variable for scrambling')
     } else {
-        if(!outcome%in%colnames(df)){
+        if(!outcome%in%colnames(df0)){
             stop('Specified outcome variable (', outcome, ') not in data.frame')
         }
     }
-    if(!boot){
-        df[,outcome] <- sample(df[,outcome])
+    if(!resample){
+        df0[,outcome] <- sample(df0[,outcome])
     } else {
         if(outcome.class){
-            boot_sample <- sample(unlist(lapply(levels(df[,outcome]), function(i){
-                sample(which(df[,outcome]==i), replace = T)
+            boot_sample <- sample(unlist(lapply(levels(df0[,outcome]), function(i){
+                sample(which(df0[,outcome]==i), replace = T)
             }))) # outer resample randomizes wrt partitionList
-            df <- df[boot_sample,]
+            df0 <- df0[boot_sample,]
         } else {
-            boot_sample <- sample(nrow(df), replace = T)
-            df <- df[boot_sample,]
+            boot_sample <- sample(nrow(df0), replace = T)
+            df0 <- df0[boot_sample,]
         }
     }
     
-    return(df)
+    return(df0)
 }
 
-fx_partition <- function(df, type = 'loocv', nresample = NULL, balance.col = NULL){
+fx_partition <- function(df0, type = 'loocv', nresample = NULL, balance.col = NULL){
     
-    nSamples <- nrow(df)
+    nSamples <- nrow(df0)
     nSequence <- seq(nSamples)
     
     if (!(type %in% c('loocv', 'ltocv') | is.numeric(type) | grepl('(-fold)$', type))){
@@ -82,16 +82,16 @@ fx_partition <- function(df, type = 'loocv', nresample = NULL, balance.col = NUL
     else if (is.numeric(type)){
         if (is.null(nresample)){stop(paste0('If type is numeric, resample must be defined.'))}
         if (is.null(balance.col)){stop(paste0('If type is numeric, balance.col must be defined.'))}
-        groups <- levels(df[,balance.col])
-        nGroups <- table(df[,balance.col])
+        groups <- levels(df0[,balance.col])
+        nGroups <- table(df0[,balance.col])
         if (length(groups)>2){stop(paste0('Only 2 group levels allowed. Group levels identified: ', length(nGroups)))}
         if (type >= min(nGroups)){stop(paste0('Specified group size (', type, ') >= smallest group size (', min(nGroups), ').'))}
 
         partitionList <- lapply(seq(nresample), function(i){
-            g1 <- which(df[,balance.col] == groups[1])
+            g1 <- which(df0[,balance.col] == groups[1])
             g1_trainSets <- sample(g1, type)
             g1_testSets <- g1[!(g1 %in% g1_trainSets)]
-            g2 <- which(df[,balance.col] == groups[2])
+            g2 <- which(df0[,balance.col] == groups[2])
             g2_trainSets <- sample(g2, type)
             g2_testSets <- g2[!(g2 %in% g2_trainSets)]
             trainSets <- c(g1_trainSets, g2_trainSets)
@@ -104,13 +104,13 @@ fx_partition <- function(df, type = 'loocv', nresample = NULL, balance.col = NUL
     return(partitionList)
 }
 
-fx_sample <- function(df, partition){
-    df.train <- df[partition$train,]
-    df.test <- df[partition$test,]
+fx_sample <- function(df0, partition){
+    df.train <- df0[partition$train,]
+    df.test <- df0[partition$test,]
     parameters <- list(sample.type = partition$sample.type)
     parameters$train.rows <- partition$train
     parameters$test.rows <- partition$test
-    parameters$data.frame <- as.character(match.call()$df)
+    parameters$data.frame <- as.character(match.call()$df0)
     if (is.numeric(parameters$sample.type)){
         parameters$nresample <- partition$nresample
         parameters$balance.col <- partition$balance.col
@@ -606,7 +606,7 @@ fx_cmatrix <- function(actual.class, pred.class, pred.prob = NULL, parameters = 
     return(perf)
 } # deprecated
 
-fx_perm <- function(df, modelPerfObj, modelObj, partitionList, nperm = 10, n.cores = 20){
+fx_perm <- function(df0, modelPerfObj, modelObj, partitionList, nperm = 10, n.cores = 20){
     
     permPerfObj <- list()
     updateMarks <- seq(from = 0, to = nperm, length.out = 11)
@@ -624,7 +624,7 @@ fx_perm <- function(df, modelPerfObj, modelObj, partitionList, nperm = 10, n.cor
             writeLines(paste0('\tPermutation: ', i, ' (', (i/nperm)*100, '% complete)'))
         }
         
-        df.scramble <- fx_scramble(df,parameters$outcome)
+        df.scramble <- fx_scramble(df0,parameters$outcome)
         if(is.numeric(parameters$sample.type)){
             partitionList <- fx_partition(df.scramble, type = parameters$sample.type,
                                           nresample = parameters$nresample, 
@@ -652,7 +652,91 @@ fx_perm <- function(df, modelPerfObj, modelObj, partitionList, nperm = 10, n.cor
     return(permPerfObj)
 }
 
-fx_boot <- function(df, modelPerfObj, modelObj, partitionList, nboot = 10, n.cores = 20){
+fx_modelVar <- function(modelPerfObj, modelObj, nresample = 50, n.cores = 20){
+    
+    modelVarPerfObj <- list()
+    updateMarks <- seq(from = 0, to = nresample, length.out = 11)
+    
+    parameters <- modelObj[[1]]$parameters
+    df.resample <- get(modelObj[[1]]$parameters$data.frame)
+    
+    writeLines('Generating resample results...')
+    
+    for(j in seq(nresample)){
+        
+        if (j%in%updateMarks){
+            writeLines(paste0('\tResample: ', j, ' (', (j/nresample)*100, '% complete)'))
+        }
+        
+        resample.partitionList <- 
+            fx_partition(df.resample, type = modelObj[[1]]$parameters$sample.type)
+        resample.modelObj <- mclapply(seq(length(resample.partitionList)), function(i){
+            fx_model(fx_sample(df.resample, 
+                               resample.partitionList[[i]]), 
+                     covar = covar, 
+                     voi = voi, 
+                     outcome = y, 
+                     model.type = modelObj[[1]]$parameters$model.type)}, 
+            mc.cores = 20)
+        resample.modelPerfObj <- 
+            fx_modelPerf(resample.modelObj,decisionThreshold = modelPerfObj$parameters$decisionThreshold)
+    
+    resample.modelPerfObj$df.allfolds <- NULL
+    resample.modelPerfObj$parameters <- NULL
+    modelVarPerfObj[[j]] <- resample.modelPerfObj
+    }
+    
+    writeLines('Resample complete!')
+    return(modelVarPerfObj)
+}
+
+fx_modelVarPerf <- function(modelPerfObj, modelVarObj, measures = NULL, compute.perf = 'within', df.iter.out = T, qrange = c(0.025, 0.975)){
+    
+    parameters <- modelPerfObj$parameters
+    parameters$nresample <- length(modelVarObj)
+    parameters$nkfcv <- F
+    parameters$compute.perf <- compute.perf
+    
+    regmodels <- c('regression')
+    classmodels <- c('svm','rf','logistic')
+    
+    if(parameters$model.type%in%regmodels){
+        measuresSet <- c('rmse', 'rsq')
+    } else if(parameters$model.type%in%classmodels) {
+        measuresSet <- c('acc', 'auc.ROC', 'sens', 'spec', 'ppv', 'npv', 'optThresh')
+    }
+    
+    if(is.null(measures)){
+        measures <- measuresSet
+    } else {
+        if(any(!measures %in% measuresSet)){
+            stop(paste0('Unknown outcome measures: ', paste(measures[which(!measures%in%measuresSet)], collapse = ',')))
+        }
+    }
+    
+    df.iter <- as.data.frame(do.call(rbind,lapply(seq(parameters$nresample), function(i){
+        modelVarObj[[i]]$perfMetrics[modelVarObj[[i]]$perfMetrics$fold==compute.perf,]
+    })))
+    
+    avg <- colMeans(df.iter[,c(paste0(measures,'.covar'), paste0(measures,'.full'))])
+    stdev <- apply(df.iter[,c(paste0(measures,'.covar'), paste0(measures,'.full'))],2,sd)
+    ci <- sapply(names(avg), function(i){c(quantile(df.iter[,i], probs = qrange, na.rm = T))})
+    df.pval <- as.data.frame(rbind(obs,stdev,ci))
+    rownames(df.pval) <- c('avg','stdev',paste0(qrange*100,'%'))
+    
+    if(df.iter.out){
+        return(list(df.iter=df.iter,
+                    df.pval=df.pval,
+                    parameters = parameters))
+    } else {
+        return(list(df.pval=df.pval,
+                    parameters = parameters))
+    }
+    
+    
+}
+
+fx_boot <- function(df0, modelPerfObj, modelObj, partitionList, nboot = 10, n.cores = 20){
 
     bootPerfObj <- list()
     updateMarks <- seq(from = 0, to = nboot, length.out = 11)
@@ -677,7 +761,7 @@ fx_boot <- function(df, modelPerfObj, modelObj, partitionList, nboot = 10, n.cor
         } else if (parameters$model.type%in%classmodels){
             outcome.class <- T
         } else {stop(paste0('Unregcognized model.type (', parameters$model.type, ')'))}
-        df.boot <- fx_scramble(df, parameters$outcome,
+        df.boot <- fx_scramble(df0, parameters$outcome,
                                boot=T, outcome.class=outcome.class)
 
         modelObjPerm <- mclapply(seq(length(partitionList)), function(j){
@@ -922,7 +1006,7 @@ fx_plot <- function(perfObj, outFile = NULL){
 
 }
 
-fx_rocPlot <- function(modelPerfObj, permPerfObj = NULL, bootPerfObj = NULL, title.name = NULL, compute.perf = 'within', plot.covar = T, plot.full = T, outFile = NULL){
+fx_rocPlot <- function(modelPerfObj, permPerfObj = NULL, modelVarPerfObj = NULL, title.name = NULL, compute.perf = 'within', plot.covar = T, plot.full = T, outFile = NULL){
     
     
     if(!plot.covar&!plot.full){
@@ -930,7 +1014,7 @@ fx_rocPlot <- function(modelPerfObj, permPerfObj = NULL, bootPerfObj = NULL, tit
     }
     
     perm.exist <- !is.null(permPerfObj)
-    boot.exist <- !is.null(bootPerfObj)
+    modelVar.exist <- !is.null(modelVarObj)
     
     parameters <- modelPerfObj$parameters
     
@@ -957,7 +1041,16 @@ fx_rocPlot <- function(modelPerfObj, permPerfObj = NULL, bootPerfObj = NULL, tit
         pred <- get(paste0("pred.prob.", j, ".sorted"))
         actual <- get(paste0("actual.class.", j, ".sorted"))
         
-        roc.vals <- lapply(c(1,pred), function(i){
+        pred.mid <- sapply(seq(length(pred)),function(i){
+            if(i==1){
+                return((1+pred[i])/2)
+            } else {
+                return((pred[i-1]+pred[i])/2)
+            }
+        })
+        pred.mid <- c(1,pred.mid,0)
+        
+        roc.vals <- t(sapply(pred.mid, function(i){
             tp <- sum(pred>=i&actual==class.levels[2])
             fp <- sum(pred>=i&actual==class.levels[1])
             fn <- sum(pred<i&actual==class.levels[2])
@@ -965,38 +1058,37 @@ fx_rocPlot <- function(modelPerfObj, permPerfObj = NULL, bootPerfObj = NULL, tit
             fpr <- fp/(fp+tn) # false-positive rate
             tpr <- tp/(tp+fn) # true-positive rate
             return(c(fpr,tpr))
-        })
-        fpr <- unlist(roc.vals)[c(T,F)] # fpr are odd elements
-        tpr <- unlist(roc.vals)[c(F,T)] # tpr are even elements
-        
-        tmp.df <- data.frame(fpr = c(0,fpr), tpr = c(0,tpr), type = j)
-        return(tmp.df)
+        }))
+        roc.vals <- data.frame(roc.vals)
+        colnames(roc.vals) <- c('fpr','tpr')
+        roc.vals$type <- j
+        return(roc.vals)
     }))
     
     if (!is.null(outFile)){pdf(fx_outFile(outFile))}
     
-    if(perm.exist&boot.exist){
+    if(perm.exist&modelVar.exist){
         
         covar.obs <- signif(permPerfObj$df.pval['obs','auc.ROC.covar'],3)
         full.obs <- signif(permPerfObj$df.pval['obs','auc.ROC.full'],3)
         covar.p <- signif(permPerfObj$df.pval['pval','auc.ROC.covar'],3)
         full.p <- signif(permPerfObj$df.pval['pval','auc.ROC.full'],3)
-        covar.ci <- paste0('[',paste(signif(bootPerfObj$df.pval[c('2.5%', '97.5%'),'auc.ROC.covar'],3),collapse = ','),']')
-        full.ci <- paste0('[',paste(signif(bootPerfObj$df.pval[c('2.5%', '97.5%'),'auc.ROC.full'],3),collapse = ','),']')
+        covar.std <- signif(modelVarPerfObj$df.pval['stdev','auc.ROC.covar'],3)
+        full.std <- signif(modelVarPerfObj$df.pval['stdev','auc.ROC.full'],3)
         nperm <- permPerfObj$parameters$nperm
-        nboot <- bootPerfObj$parameters$nboot
+        nresample <- modelVarPerfObj$parameters$nresample
         
         if(plot.covar&plot.full){
-            subtext <- paste0('covar: ', covar.obs, ' ', covar.ci, ', p = ', covar.p, '; full: ', full.obs, ' ', full.ci, ', p = ', full.p)
+            subtext <- paste0('covar: ', covar.obs, ' \u00B1 ', covar.std, ', p = ', covar.p, '; full: ', full.obs, ' \u00B1 ', full.std, ', p = ', full.p)
         } else if(plot.covar&!plot.full){
-            subtext <- paste0('covar: ', covar.obs, ' ', covar.ci, ', p = ', covar.p)
+            subtext <- paste0('covar: ', covar.obs, ' \u00B1 ', covar.std, ', p = ', covar.p)
         } else if(!plot.covar&plot.full){
-            subtext <- paste0('full: ', full.obs, ' ', full.ci, ', p = ', full.p)
+            subtext <- paste0('full: ', full.obs, ' \u00B1 ', full.std, ', p = ', full.p)
         }
         
-        captext <- paste0('nperm: ', nperm, '; nboot: ', nboot)
+        captext <- paste0('nperm: ', nperm, '; nresample: ', nresample)
         
-    } else if(perm.exist&!boot.exist){
+    } else if(perm.exist&!modelVar.exist){
         
         covar.obs <- signif(permPerfObj$df.pval['obs','auc.ROC.covar'],3)
         covar.p <- signif(permPerfObj$df.pval['pval','auc.ROC.covar'],3)
@@ -1004,28 +1096,26 @@ fx_rocPlot <- function(modelPerfObj, permPerfObj = NULL, bootPerfObj = NULL, tit
         full.p <- signif(permPerfObj$df.pval['pval','auc.ROC.full'],3)
         nperm <- permPerfObj$parameters$nperm
         
-        subtext <- paste0('covar: ', covar.obs, ' 95% CI NA, p = ', covar.p, '; full: ', full.obs, ' 95% CI NA, p = ', full.p)
-        captext <- paste0('nperm: ', nperm, '; nboot: NA')
+        subtext <- paste0('covar: ', covar.obs, ' \u00B1 NA, p = ', covar.p, '; full: ', full.obs, ' \u00B1 NA, p = ', full.p)
+        captext <- paste0('nperm: ', nperm, '; nresample: NA')
         
-    } else if(!perm.exist&boot.exist){
+    } else if(!perm.exist&modelVar.exist){
         
-        covar.obs <- signif(bootPerfObj$df.pval['obs','auc.ROC.covar'],3)
-        full.obs <- signif(bootPerfObj$df.pval['obs','auc.ROC.full'],3)
-        covar.p <- signif(ecdf(bootPerfObj$df.iter$auc.ROC.covar)(0.5),3)
-        full.p <- signif(ecdf(bootPerfObj$df.iter$auc.ROC.full)(0.5),3)
-        covar.ci <- paste0('[',paste(signif(bootPerfObj$df.pval[c('2.5%', '97.5%'),'auc.ROC.covar'],3),collapse = ','),']')
-        full.ci <- paste0('[',paste(signif(bootPerfObj$df.pval[c('2.5%', '97.5%'),'auc.ROC.full'],3),collapse = ','),']')
-        nboot <- bootPerfObj$parameters$nboot
+        covar.obs <- signif(modelVarPerfObj$df.pval['avg','auc.ROC.covar'],3)
+        full.obs <- signif(modelVarPerfObj$df.pval['avg','auc.ROC.full'],3)
+        covar.std <- signif(modelVarPerfObj$df.pval['stdev','auc.ROC.covar'],3)
+        full.std <- signif(modelVarPerfObj$df.pval['stdev','auc.ROC.full'],3)
+        nresample <- modelVarPerfObj$parameters$nresample
         
         if(plot.covar&plot.full){
-            subtext <- paste0('covar: ', covar.obs, ' ', covar.ci, ', boot-p = ', covar.p, '; full: ', full.obs, ' ', full.ci, ', boot-p = ', full.p)
+            subtext <- paste0('covar: ', covar.obs, ' \u00B1 ', covar.std, ', p = NA; full: ', full.obs, ' \u00B1 ', full.std, ', p = NA')
         } else if(plot.covar&!plot.full){
-            subtext <- paste0('covar: ', covar.obs, ' ', covar.ci, ', boot-p = ', covar.p)
+            subtext <- paste0('covar: ', covar.obs, ' \u00B1 ', covar.std, ', p = NA')
         } else if(!plot.covar&plot.full){
-            subtext <- paste0('full: ', full.obs, ' ', full.ci, ', boot-p = ', full.p)
+            subtext <- paste0('full: ', full.obs, ' \u00B1 ', full.std, ', p = NA')
         }
         
-        captext <- paste0('nperm: NA; nboot: ', nboot)
+        captext <- paste0('nperm: NA; nresample: ', nresample)
         
     } else if(!perm.exist&&!boot.exist&&!is.null(compute.perf)){
         
@@ -1033,14 +1123,14 @@ fx_rocPlot <- function(modelPerfObj, permPerfObj = NULL, bootPerfObj = NULL, tit
         full.obs <- signif(modelPerfObj$perfMetrics[modelPerfObj$perfMetrics$fold==compute.perf,'auc.ROC.full'],3)
         
         if(plot.covar&plot.full){
-            subtext <- paste0('covar: ', covar.obs, ' 95% CI NA, p = NA; full: ', full.obs, ' 95% CI NA, p = NA')
+            subtext <- paste0('covar: ', covar.obs, ' \u00B1 NA, p = NA; full: ', full.obs, ' \u00B1 NA, p = NA')
         } else if(plot.covar&!plot.full){
-            subtext <- paste0('covar: ', covar.obs, ' 95% CI NA, p = NA')
+            subtext <- paste0('covar: ', covar.obs, ' \u00B1 NA, p = NA')
         } else if(!plot.covar&plot.full){
-            subtext <- paste0('full: ', full.obs, ' 95% CI NA, p = NA')
+            subtext <- paste0('full: ', full.obs, ' \u00B1 NA, p = NA')
         }
         
-        captext <- 'nperm: NA; nboot: NA'
+        captext <- 'nperm: NA; nresample: NA'
         
     } else {
         subtext <- NULL

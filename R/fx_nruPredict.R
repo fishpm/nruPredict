@@ -24,8 +24,3 @@ for (i in functions.to.load){
     source(paste0('/users/patrick/github/nruPredict/R/',i))
     writeLines(paste0(i, ' loaded!'))
 }
-
-
-
-
-#c('fx_outFile.R','fx_predictR.R','fx_bootPerf.R','fx_plot.R','fx_boot.R','fx_nruPredict.R','fx_prediction.R','fx_summary.R')

@@ -1,5 +1,7 @@
 ### Performs bootstrap resmapling
 
+# quick test
+
 fx_boot <- function(df0, modelPerfObj, modelObj, partitionList, nboot = 10, n.cores = 20){
     
     bootPerfObj <- list()

@@ -51,8 +51,10 @@
 
 fx_modelResample <- function(df0, cv.type = NULL, covar = NULL, voi = NULL, outcome = NULL, model.type = NULL, nresample = 1, dthresh = 0.5, z.pred = F, n.cores = 20, balance.col = NULL){
     
+    # For visual update on progress
     updateMarks <- seq(from = 0, to = nresample, length.out = 11)
     
+    # only one resample if loocv
     if(cv.type == 'loocv'){
         nresample <- 1
         writeLines('LOOCV - resetting nresamples to 1...')
@@ -60,13 +62,18 @@ fx_modelResample <- function(df0, cv.type = NULL, covar = NULL, voi = NULL, outc
         writeLines('Generating resample results...')
     }
     
+    # fit model object for each resample
     modelResamplePerfObj <- lapply(seq(nresample), function(j){
         
+        # update on progress
         if (j%in%updateMarks){
             writeLines(paste0('\tResample: ', j, ' (', (j/nresample)*100, '% complete)'))
         }
         
+        # partition data in to folds
         partition.list <- fx_partition(df0, type = cv.type, balance.col = balance.col)
+        
+        # apply machine learning framework
         modelObj <- mclapply(seq(length(partition.list)), function(i){
             fx_model(fx_sample(df0,partition.list[[i]]), 
                      covar = covar, 
@@ -75,14 +82,18 @@ fx_modelResample <- function(df0, cv.type = NULL, covar = NULL, voi = NULL, outc
                      model.type = model.type, 
                      z.pred = z.pred)}, 
             mc.cores = n.cores)
+        
+        # summarize model performance
         modelPerfObj <- fx_modelPerf(modelObj, dthresh=dthresh)
         
-        # modelPerfObj$df.allfolds <- NULL
+        # parameters saved only once and as it's own list element
         modelPerfObj$parameters <- NULL
+        
         return(modelPerfObj)
         
     })
     
+    # run model once to extract parameter information
     partition.list <- fx_partition(df0, type = cv.type, balance.col = balance.col)
     modelObj <- mclapply(seq(length(partition.list)), function(i){
         fx_model(fx_sample(df0,partition.list[[i]]), 
@@ -92,11 +103,14 @@ fx_modelResample <- function(df0, cv.type = NULL, covar = NULL, voi = NULL, outc
                  model.type = model.type)}, 
         mc.cores = n.cores)
     modelPerfObj <- fx_modelPerf(modelObj, dthresh=dthresh)
+    
+    # update parameter information
     parameters <- modelPerfObj$parameters
     parameters$z.pred <- z.pred
     parameters$nresample <- nresample
 
     writeLines('Model fitting completed!')
+    
     return(list(modelResamplePerfObj = modelResamplePerfObj,
                 parameters = parameters))
 }

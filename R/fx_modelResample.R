@@ -28,13 +28,26 @@
 #                       "across":   sum or mean of metric across folds
 #                       "within":   mean of metric across folds
 #                       {TP: true positive, FP: false positive, TN: true negative, FN: false negative, sens: sensitivity, spec: specificity, ppv: positive predictive value, npv: negative predictive value, acc: accuracy, auc.ROC: area under the curve of ROC curve, optThresh: optimal decision threshold determined from training data}
-#       "cmat.covar"    confusion matrix covariate model
-#       "cmat.full":    description of cross-validation method (e.g., 5-fold)
-#       "df.allfolds":  
-#   parameters: list of machine learning model parameters
-#       "test":         is numeric list, values correspond to rows in df0 assigned to model "test" group
-#       "train"         is numeric list, values correspond to rows in df0 assigned to model "train" group
-#       "sample.type":  description of cross-validation method (e.g., 5-fold)
+#       "cmat.covar":   confusion matrix of covariate model (at "dthresh" decision threshold)
+#       "cmat.full":    confusion matrix of full model (at "dthresh" decision threshold)
+#       "df.allfolds":  data frame for test-related model predictions
+#                       {orig.df.row: row in original data frame for specific observation, fold: fold assignment, pred.prob.covar: predicted probability of class membership from covariate model, pred.prob.full: predicted probability of class membership from full model, pred.class.covar: predicted class from covariate model, pred.class.full: predicted class from full model, actual.class: actual class membership}
+#   parameters: list of relevant specified parameters
+#       "sample.type": cross-validation sampling procedure
+#       "class.levels": class levels
+#       "model.type": machine learning model framework
+#       "covar": specified covariates
+#       "voi": specified variables of interest
+#       "outcome": name of class being predicted
+#       "formula.covar": formula object for covariate model
+#       "formula.full": formula object for full model
+#       "data.frame": data frame specified (CURRENTLY NOT CORRECTLY SPECIFIED)
+#       "cmat.descrip": key for how to understand confusion matrices ()
+#       "negative.class": class assigned to probability = 0
+#       "positive.class": class assigned to probability = 1
+#       "dthresh": decision threshold
+#       "z.pred": whether z-scoring of features is specified
+#       "nresample": number of resamples
 
 fx_modelResample <- function(df0, cv.type = NULL, covar = NULL, voi = NULL, outcome = NULL, model.type = NULL, nresample = 1, dthresh = 0.5, z.pred = F, n.cores = 20, balance.col = NULL){
     

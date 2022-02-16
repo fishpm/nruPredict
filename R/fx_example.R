@@ -14,7 +14,7 @@ voi <- c('f1','f2')
 covar <- c('age','sex')
 y <- 'group'
 nresample <- 10
-nperm <- 100
+nperm <- 10
 
 # fit classification model
 modelObj <- fx_modelResample(df0 = dd, # data frame

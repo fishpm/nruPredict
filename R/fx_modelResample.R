@@ -3,11 +3,6 @@
 ### Apply machine learning framework to specified dataset
 
 # INPUTS:
-
-#   type: cross-validation type
-#   nresaple: 
-#   balance.col
-
 #   df0: data frame including all observations (data frame)
 #   cv.type: cross-validation type ('loocv', 'ltocv', 'n-fold', 'numeric') (string)
 #   covar: list of df0 column names for "covariate" (not of specific interest) features (string/list)

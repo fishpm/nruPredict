@@ -1,3 +1,18 @@
+### DESCRIPTION ###
+
+### Derive AUC ROC and optimal threshold values
+
+# INPUTS:
+#   pred.prob:
+#   actual.class
+#   class.levels:
+
+# OUTPUTS:
+#   A list of length five, containing the following elements:
+
+#   roc.auc: 
+#   optimal.threshold: 
+
 fx_rocCompute <- function(pred.prob, actual.class, class.levels){
     
     pred.prob.sort <- pred.prob[order(pred.prob,decreasing=T)]

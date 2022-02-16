@@ -1,7 +1,14 @@
-### DESCRIPTION:
+### DESCRIPTION ###
 
-### Load relevant libraries
+### Load relevant libraries and functions
 
+# INPUTS:
+#   NONE
+
+# OUTPUTS:
+#   NONE
+
+# relevant libraries
 require('mvtnorm')
 require('parallel')
 require('pROC')
@@ -12,6 +19,7 @@ require('randomForest')
 require('e1071')
 require('zoo')
 
+# relevant functions
 functions.to.load <- c('fx_scramble.R',
                        'fx_partition.R',
                        'fx_sample.R',

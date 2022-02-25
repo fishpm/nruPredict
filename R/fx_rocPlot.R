@@ -1,192 +1,271 @@
-### Generates ROC plot
+### DESCRIPTION ###
 
-fx_rocPlot <- function(modelObj, permPerfObj = NULL, modelResamplePerf = NULL, title.name = NULL, plot.covar = T, plot.full = T, outFile = NULL, d.steps = 0.01){
+### Create AUC-ROC plots
+
+# INPUTS:
+#   modelObj: model object, containing observed model performances
+#   modelPerfObj:   object with summary measures of observed model performance
+#   permPerfObj:    object with summary measures of permutation model performance
+#   model.type:     string for title of ROC curve plot (string)
+
+# OUTPUTS:
+#   p: ggplot object of ROC curve
+
+
+fx_rocPlot2 <- function(modelObj = NULL, modelPerfObj = NULL, permPerfObj = NULL, title.text = NULL){
     
-    
-    if(!plot.covar&!plot.full){
-        stop('Why plot nothing?')
+    if(is.null(modelObj)){
+        stop('modelObj not specified.')
     }
     
-    perm.exist <- !is.null(permPerfObj)
-    resample.exist <- !is.null(modelResamplePerf)
+    writeLines('Preparing ROC curve plots...')
     
-    parameters <- modelObj$parameters
+    # assign classes
+    negClass <- modelObj$parameters$negative.class
+    posClass <- modelObj$parameters$positive.class
+    class.levels <- modelObj$parameters$class.levels
     
-    regmodels <- c('regression')
-    if (modelObj$parameters$model.type%in%regmodels){
-        stop('Cannot compute ROC for regression models')
+    # steps
+    thresh.set <- seq(0,1,by=0.05)
+    
+    nresamples <- length(modelObj$modelResamplePerfObj)
+    nresamples.seq <- seq(nresamples)
+    
+    # data framce for roc curve generation
+    dd.cv <- data.frame(resample = rep(nresamples.seq, each = length(thresh.set)),
+                        threshold = rep(thresh.set, nresamples))
+    
+    covar.is.null <- all(is.na(unlist(lapply(nresamples.seq, function(nres){
+        modelObj$modelResamplePerfObj[[nres]]$df.allfolds$pred.prob.covar
+    }))))
+    
+    if(!covar.is.null){
+        # compute tpr and fpr at all steps for covariate model
+        covar.out <- lapply(nresamples.seq, function(nres){
+            out <- t(sapply(thresh.set, function(currThresh){
+                if(currThresh == 0){
+                    tpr <- 1
+                    fpr <- 1
+                } else if(currThresh == 1){
+                    tpr <- 0
+                    fpr <- 0
+                } else {
+                    covar.prob <- modelObj$modelResamplePerfObj[[nres]]$df.allfolds$pred.prob.covar
+                    covar.bin <- as.numeric(covar.prob > currThresh) + 1
+                    currGuess <- class.levels[covar.bin]
+                    actualClass <- modelObj$modelResamplePerfObj[[nres]]$df.allfolds$actual.class
+                    tp <- sum(currGuess == posClass & actualClass == posClass) # true positive
+                    tn <- sum(currGuess == negClass & actualClass == negClass) # true negative
+                    fp <- sum(currGuess == posClass & actualClass == negClass) # false positive
+                    fn <- sum(currGuess == negClass & actualClass == posClass) # false negative
+                    tpr <- tp/(tp+fn) # true positive rate
+                    tnr <- tn/(tn+fp) # true negative rate
+                    if(any(is.infinite(c(tpr,tnr)))){
+                        stop('tpr or tnr is infinite.')
+                    }
+                    fpr <- 1 - tnr # false positive rate == 1 - tnr
+                }
+                return(c(tpr,fpr))
+            }))
+            colnames(out) <- c('tpr','fpr')
+            return(list(tpr=out[,'tpr'],fpr=out[,'fpr']))
+        })
+    } else {
+        covar.out <- NULL
     }
     
-    if(modelObj$parameters$model.type=='svm'){
-        stop('Cannot perform ROC on SVM model')
-    }
-    
-    if(is.null(title.name)){title.name <- 'ROC Curve'}
-    
-    d.range <- seq(0,1,by=d.steps)
-    
-    class.levels <- parameters$class.levels
-    roc.list <- lapply(seq(length(modelObj$modelResamplePerfObj)), function(i){
-        
-        actual.class <- modelObj$modelResamplePerfObj[[i]]$df.allfolds$actual.class
-        n.neg <- sum(actual.class==class.levels[1])
-        n.pos <- sum(actual.class==class.levels[2])
-        
-        roc.iter <- data.frame(do.call(rbind,lapply(d.range, function(j){
-            
-            if(!is.null(parameters$covar)){
-                
-                pred.covar <- class.levels[as.numeric(modelObj$modelResamplePerfObj[[i]]$df.allfolds$pred.prob.covar>j)+1]
-                tp.covar <- sum(pred.covar==class.levels[2] & actual.class==class.levels[2])
-                fp.covar <- sum(pred.covar==class.levels[2] & actual.class==class.levels[1])
-                tpr.covar <- tp.covar/n.pos
-                fpr.covar <- fp.covar/n.neg
-                
+    full.is.null <- all(is.na(unlist(lapply(nresamples.seq, function(nres){
+        modelObj$modelResamplePerfObj[[nres]]$df.allfolds$pred.prob.full
+    }))))
+    if(full.is.null){stop('Full model has no predicted probabilities...')}
+
+    # compute tpr and fpr at all steps for full model
+    full.out <- lapply(nresamples.seq, function(nres){
+        out <- t(sapply(thresh.set, function(currThresh){
+            if(currThresh == 0){
+                tpr <- 1
+                fpr <- 1
+            } else if(currThresh == 1){
+                tpr <- 0
+                fpr <- 0
             } else {
-                
-                tpr.covar <- NULL
-                fpr.covar <- NULL
-                
+                full.prob <- modelObj$modelResamplePerfObj[[nres]]$df.allfolds$pred.prob.full
+                full.bin <- as.numeric(full.prob > currThresh) + 1
+                currGuess <- class.levels[full.bin]
+                actualClass <- modelObj$modelResamplePerfObj[[nres]]$df.allfolds$actual.class
+                tp <- sum(currGuess == posClass & actualClass == posClass) # true positive
+                tn <- sum(currGuess == negClass & actualClass == negClass) # true negative
+                fp <- sum(currGuess == posClass & actualClass == negClass) # false positive
+                fn <- sum(currGuess == negClass & actualClass == posClass) # false negative
+                tpr <- tp/(tp+fn) # true positive rate
+                tnr <- tn/(tn+fp) # true negative rate
+                if(any(is.infinite(c(tpr,tnr)))){stop('tpr or tnr is infinite.')}
+                fpr <- 1 - tnr # false positive rate == 1 - tnr
             }
-            
-            pred.full <- class.levels[as.numeric(modelObj$modelResamplePerfObj[[i]]$df.allfolds$pred.prob.full>j)+1]
-            tp.full <- sum(pred.full==class.levels[2] & actual.class==class.levels[2])
-            fp.full <- sum(pred.full==class.levels[2] & actual.class==class.levels[1])
-            tpr.full <- tp.full/n.pos
-            fpr.full <- fp.full/n.neg
-            
-            return(list(tpr.covar=tpr.covar,
-                        fpr.covar=fpr.covar,
-                        tpr.full=tpr.full,
-                        fpr.full=fpr.full))
-        })))
-        return(roc.iter)
+            return(c(tpr,fpr))
+        }))
+        colnames(out) <- c('tpr','fpr')
+        return(list(tpr=out[,'tpr'],fpr=out[,'fpr']))
     })
     
-    if(!is.null(parameters$covar)){
-        
-        tpr.covar.array <- rowMeans(sapply(seq(length(roc.list)), function(i){
-            unlist(roc.list[[i]]$tpr.covar)
+    
+    # assign values to dd.cv
+    if(!is.null(covar.out)){
+        dd.cv$tpr.covar <- as.vector(sapply(nresamples.seq, function(nres){
+            covar.out[[nres]]$tpr
         }))
-        fpr.covar.array <- rowMeans(sapply(seq(length(roc.list)), function(i){
-            unlist(roc.list[[i]]$fpr.covar)
-        }))    
-        
+        dd.cv$fpr.covar <- as.vector(sapply(nresamples.seq, function(nres){
+            covar.out[[nres]]$fpr
+        }))
     } else {
-        
-        tpr.covar.array <- NULL
-        fpr.covar.array <- NULL
-        
+        dd.cv$tpr.covar <- NA
+        dd.cv$fpr.covar <- NA
     }
     
-    tpr.full.array <- rowMeans(sapply(seq(length(roc.list)), function(i){
-        unlist(roc.list[[i]]$tpr.full)
+    dd.cv$tpr.full <- as.vector(sapply(nresamples.seq, function(nres){
+        full.out[[nres]]$tpr
     }))
-    fpr.full.array <- rowMeans(sapply(seq(length(roc.list)), function(i){
-        unlist(roc.list[[i]]$fpr.full)
+    dd.cv$fpr.full <- as.vector(sapply(nresamples.seq, function(nres){
+        full.out[[nres]]$fpr
     }))
     
-    roc.df <- data.frame(tpr.array = c(tpr.covar.array,tpr.full.array),
-                         fpr.array = c(fpr.covar.array,fpr.full.array),
-                         type = c(rep('covar',length(tpr.covar.array)),rep('full',length(tpr.covar.array)))
-                         )
+    # summary values for plots
+    dd.cv.summary <- data.frame(threshold = thresh.set)
+    summary.vals <- t(sapply(thresh.set, function(j){
+        
+        covar.tpr.mean <- mean(dd.cv$tpr.covar[dd.cv$threshold==j])
+        full.tpr.mean <- mean(dd.cv$tpr.full[dd.cv$threshold==j])
+        
+        covar.tpr.lwr <- covar.tpr.mean - sd(dd.cv$tpr.covar[dd.cv$threshold==j])
+        covar.tpr.upr <- covar.tpr.mean + sd(dd.cv$tpr.covar[dd.cv$threshold==j])
+        full.tpr.lwr <- full.tpr.mean - sd(dd.cv$tpr.full[dd.cv$threshold==j])
+        full.tpr.upr <- full.tpr.mean + sd(dd.cv$tpr.full[dd.cv$threshold==j])
+        
+        covar.fpr.mean <- mean(dd.cv$fpr.covar[dd.cv$threshold==j])
+        full.fpr.mean <- mean(dd.cv$fpr.full[dd.cv$threshold==j])
+        
+        covar.fpr.lwr <- covar.fpr.mean - sd(dd.cv$fpr.covar[dd.cv$threshold==j])
+        covar.fpr.upr <- covar.fpr.mean + sd(dd.cv$fpr.covar[dd.cv$threshold==j])
+        full.fpr.lwr <- full.fpr.mean - sd(dd.cv$fpr.full[dd.cv$threshold==j])
+        full.fpr.upr <- full.fpr.mean + sd(dd.cv$fpr.full[dd.cv$threshold==j])
+        
+        return(c(covar.tpr.mean,
+                 covar.tpr.lwr,
+                 covar.tpr.upr,
+                 full.tpr.mean,
+                 full.tpr.lwr,
+                 full.tpr.upr,
+                 covar.fpr.mean,
+                 covar.fpr.lwr,
+                 covar.fpr.upr,
+                 full.fpr.mean,
+                 full.fpr.lwr,
+                 full.fpr.upr))
+    }))
+    colnames(summary.vals) <- c('covar.tpr.mean',
+                                'covar.tpr.lwr',
+                                'covar.tpr.upr',
+                                'full.tpr.mean',
+                                'full.tpr.lwr',
+                                'full.tpr.upr',
+                                'covar.fpr.mean',
+                                'covar.fpr.lwr',
+                                'covar.fpr.upr',
+                                'full.fpr.mean',
+                                'full.fpr.lwr',
+                                'full.fpr.upr')
     
-    if (!is.null(outFile)){pdf(fx_outFile(outFile))}
+    summary.vals <- as.data.frame(summary.vals)
+    dd.cv.summary[,c('covar.tpr.mean',
+                     'covar.tpr.lwr',
+                     'covar.tpr.upr',
+                     'full.tpr.mean',
+                     'full.tpr.lwr',
+                     'full.tpr.upr',
+                     'covar.fpr.mean',
+                     'covar.fpr.lwr',
+                     'covar.fpr.upr',
+                     'full.fpr.mean',
+                     'full.fpr.lwr',
+                     'full.fpr.upr')] <- summary.vals
     
-    if(perm.exist&resample.exist){
-        
-        covar.obs <- signif(permPerfObj$df.summary['obs','auc.ROC.covar'],3)
-        full.obs <- signif(permPerfObj$df.summary['obs','auc.ROC.full'],3)
-        covar.p <- signif(permPerfObj$df.summary['pval','auc.ROC.covar'],3)
-        full.p <- signif(permPerfObj$df.summary['pval','auc.ROC.full'],3)
-        covar.std <- signif(modelResamplePerf$df.summary['stdev','auc.ROC.covar'],3)
-        full.std <- signif(modelResamplePerf$df.summary['stdev','auc.ROC.full'],3)
-        nperm <- permPerfObj$parameters$nperm
-        nresample <- modelResamplePerf$parameters$nresample
-        
-        if(plot.covar&plot.full){
-            subtext <- paste0('covar: ', covar.obs, ' \u00B1 ', covar.std, ', p = ', covar.p, '; full: ', full.obs, ' \u00B1 ', full.std, ', p = ', full.p)
-        } else if(plot.covar&!plot.full){
-            subtext <- paste0('covar: ', covar.obs, ' \u00B1 ', covar.std, ', p = ', covar.p)
-        } else if(!plot.covar&plot.full){
-            subtext <- paste0('full: ', full.obs, ' \u00B1 ', full.std, ', p = ', full.p)
+    if(!is.null(modelPerfObj)){
+        if(!covar.is.null){
+            covar.mean <- signif(modelPerfObj$df.summary['avg','auc.ROC.covar'],3)
+            covar.lwr <- signif(modelPerfObj$df.summary['2.5%','auc.ROC.covar'],3)
+            covar.upr <- signif(modelPerfObj$df.summary['97.5%','auc.ROC.covar'],3)
         }
-        
-        captext <- paste0('nperm: ', nperm, '; nresample: ', nresample)
-        
-    } else if(perm.exist&!resample.exist){
-        
-        covar.obs <- signif(permPerfObj$df.summary['obs','auc.ROC.covar'],3)
-        full.obs <- signif(permPerfObj$df.summary['obs','auc.ROC.full'],3)
-        covar.p <- signif(permPerfObj$df.summary['pval','auc.ROC.covar'],3)
-        full.p <- signif(permPerfObj$df.summary['pval','auc.ROC.full'],3)
-        nperm <- permPerfObj$parameters$nperm
-        
-        subtext <- paste0('covar: ', covar.obs, ' \u00B1 NA, p = ', covar.p, '; full: ', full.obs, ' \u00B1 NA, p = ', full.p)
-        captext <- paste0('nperm: ', nperm, '; nresample: ', length(modelObj$modelResamplePerfObj))
-        
-    } else if(!perm.exist&resample.exist){
-        
-        covar.obs <- signif(modelResamplePerf$df.summary['avg','auc.ROC.covar'],3)
-        full.obs <- signif(modelResamplePerf$df.summary['avg','auc.ROC.full'],3)
-        covar.std <- signif(modelResamplePerf$df.summary['stdev','auc.ROC.covar'],3)
-        full.std <- signif(modelResamplePerf$df.summary['stdev','auc.ROC.full'],3)
-        nresample <- modelResamplePerf$parameters$nresample
-        
-        if(plot.covar&plot.full){
-            subtext <- paste0('covar: ', covar.obs, ' \u00B1 ', covar.std, ', p = NA; full: ', full.obs, ' \u00B1 ', full.std, ', p = NA')
-        } else if(plot.covar&!plot.full){
-            subtext <- paste0('covar: ', covar.obs, ' \u00B1 ', covar.std, ', p = NA')
-        } else if(!plot.covar&plot.full){
-            subtext <- paste0('full: ', full.obs, ' \u00B1 ', full.std, ', p = NA')
-        }
-        
-        captext <- paste0('nperm: NA; nresample: ', nresample)
-        
-    } else if(!perm.exist&&!resample.exist){
-        
-        modelResamplePerf <- fx_modelResamplePerf(modelObj)
-        covar.obs <- signif(modelResamplePerf$df.summary['avg','auc.ROC.covar'],3)
-        full.obs <- signif(modelResamplePerf$df.summary['avg','auc.ROC.full'],3)
-        covar.std <- signif(modelResamplePerf$df.summary['stdev','auc.ROC.covar'],3)
-        full.std <- signif(modelResamplePerf$df.summary['stdev','auc.ROC.full'],3)
-        nresample <- modelResamplePerf$parameters$nresample
-        
-        if(plot.covar&plot.full){
-            subtext <- paste0('covar: ', covar.obs, ' \u00B1 ', covar.std, ', p = NA; full: ', full.obs, ' \u00B1 ', full.std, ', p = NA')
-        } else if(plot.covar&!plot.full){
-            subtext <- paste0('covar: ', covar.obs, ' \u00B1 ', covar.std, ', p = NA')
-        } else if(!plot.covar&plot.full){
-            subtext <- paste0('full: ', full.obs, ' \u00B1 ', full.std, ', p = NA')
-        }
-        
-        captext <- paste0('nperm: NA; nresample: ', nresample)
-        
+        full.mean <- signif(modelPerfObj$df.summary['avg','auc.ROC.full'],3)
+        full.lwr <- signif(modelPerfObj$df.summary['2.5%','auc.ROC.full'],3)
+        full.upr <- signif(modelPerfObj$df.summary['97.5%','auc.ROC.full'],3)
     } else {
+        covar.mean <- covar.lwr <- covar.upr <- full.mean <- full.upr <- full.lwr <- NA
+    }
+    if(!is.null(permPerfObj)){
+        if(!covar.is.null){
+            covar.p <- signif(permPerfObj$df.summary['pval','auc.ROC.covar'],3)
+        }
         
-        subtext <- NULL
-        captext <- NULL
+        full.p <- signif(permPerfObj$df.summary['pval','auc.ROC.full'],3)
+    } else {
+        covar.p <- full.p <- NA
     }
+    subtitle.text <- paste0('covar: ',
+                            covar.mean, ' [',
+                            covar.lwr, ', ',
+                            covar.upr, ']; p = ',
+                            covar.p, '; ',
+                            'full: ',
+                            full.mean, ' [',
+                            full.lwr, ', ',
+                            full.upr, ']; p = ',
+                            full.p)
     
-    
-    p <- ggplot(data = roc.df, aes(x=fpr.array,y=tpr.array,group=type,color=type))
-    print(p + 
-              geom_segment(aes(x=0, y=0, xend=1, yend=1), color = 'gray', lwd = 2) +
-              geom_line(lwd = 2)+
-              labs(title = title.name,
-                   subtitle = subtext,
-                   x = 'False positive rate (1-specificity)',
-                   y = 'True positive rate (sensitivity)',
-                   caption = captext,
-                   color = 'Model') + 
-              theme(plot.title = element_text(hjust = 0.5),
-                    plot.subtitle = element_text(hjust = 0.5),
-                    plot.caption = element_text(hjust = 0.5))
-    )
-    
-    if (!is.null(outFile)){
-        writeLines(paste0('Output file written: ', fx_outFile(outFile)))
-        dev.off()
+    if(is.null(title.text)){
+        title.text <- 'ROC Curve'
     }
-    
+        
+    color.vals <- c('full' = 'red', 'covar' = 'blue')
+    # Generate ROC curves
+    p <- ggplot(dd.cv.summary, aes(x=full.fpr.mean,y=full.tpr.mean)) +
+        geom_segment(aes(x=0, y=0, xend=1, yend=1), color = 'black', lwd = 2) +
+        geom_line(aes(color = 'full'), lwd = 2) +
+        geom_ribbon(aes(x=full.fpr.mean,
+                        ymin=full.tpr.lwr,
+                        ymax=full.tpr.upr,
+                        fill = 'full'), 
+                    alpha = 0.2) +
+        labs(title = title.text,
+             subtitle = subtitle.text,
+             x = '1-Specificity',
+             y = 'Sensitivity',
+             color = 'Models') +
+        guides(fill = 'none') +
+        scale_color_manual(values = color.vals) +
+        scale_fill_manual(values = color.vals) +
+        theme(plot.title = element_text(hjust = 0.5,
+                                        size = 20),
+              plot.subtitle = element_text(hjust = 0.5,
+                                           size = 16),
+              legend.title.align = 0.5,
+              legend.title = element_text(size = 16),
+              legend.text = element_text(size = 14),
+              axis.title.x = element_text(size = 18),
+              axis.title.y = element_text(size = 18),
+              axis.text.x = element_text(size = 16),
+              axis.text.y = element_text(size = 16))
+    if(all(!is.na(dd.cv.summary$covar.tpr.mean))){
+        p <- p +
+            geom_line(aes(x=covar.fpr.mean,y=covar.tpr.mean,color='covar'),
+                      lwd = 2) +
+            geom_ribbon(aes(x=covar.fpr.mean,
+                            ymin=covar.tpr.lwr,
+                            ymax=covar.tpr.upr,
+                            fill = 'blue'), 
+                        alpha = 0.2
+                        )
+        
+    }
+    print(p)
+    return(p)
 }

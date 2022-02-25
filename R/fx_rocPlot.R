@@ -12,7 +12,7 @@
 #   p: ggplot object of ROC curve
 
 
-fx_rocPlot2 <- function(modelObj = NULL, modelPerfObj = NULL, permPerfObj = NULL, title.text = NULL){
+fx_rocPlot <- function(modelObj = NULL, modelPerfObj = NULL, permPerfObj = NULL, title.text = NULL){
     
     if(is.null(modelObj)){
         stop('modelObj not specified.')

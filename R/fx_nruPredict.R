@@ -22,6 +22,7 @@ require('zoo')
 # relevant functions
 functions.to.load <- c('fx_scramble.R',
                        'fx_partition.R',
+                       'fx_partition2.R',
                        'fx_sample.R',
                        'fx_model.R',
                        'fx_modelPerf.R',

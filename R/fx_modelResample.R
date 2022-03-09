@@ -14,6 +14,7 @@
 #   z.pred: standardize predictive features (boolean)
 #   n.cores: number of cores (parallel processes) (numeric/integer)
 #   balance.col: df0 column name used for ensuring balanced columns
+#   partitions: pre-defined train/test partitions
 
 # OUTPUTS:
 #   A list of length two, containing the following elements:
@@ -44,7 +45,7 @@
 #       "z.pred": whether z-scoring of features is specified
 #       "nresample": number of resamples
 
-fx_modelResample <- function(df0, cv.type = NULL, covar = NULL, voi = NULL, outcome = NULL, model.type = NULL, nresample = 1, dthresh = 0.5, z.pred = F, n.cores = 20, balance.col = NULL){
+fx_modelResample <- function(df0, cv.type = NULL, covar = NULL, voi = NULL, outcome = NULL, model.type = NULL, nresample = 1, dthresh = 0.5, z.pred = F, n.cores = 20, balance.col = NULL, partitions = NULL){
     
     # For visual update on progress
     updateMarks <- seq(from = 0, to = nresample, length.out = 11)
@@ -66,7 +67,11 @@ fx_modelResample <- function(df0, cv.type = NULL, covar = NULL, voi = NULL, outc
         }
         
         # partition data in to folds
-        partition.list <- fx_partition(df0, type = cv.type, balance.col = balance.col)
+        if(is.null(partitions)){
+            partition.list <- fx_partition(df0, type = cv.type, balance.col = balance.col)
+        } else {
+            partition.list <- partitions[[j]]
+        }
         
         # apply machine learning framework
         modelObj <- mclapply(seq(length(partition.list)), function(i){

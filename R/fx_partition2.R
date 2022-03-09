@@ -36,8 +36,8 @@ fx_partition2 <- function(modelObj = NULL){
         for(j in seq(nfolds)){
             unique.orig.df.row <- modelObj$modelResamplePerfObj[[i]]$df.allfolds$orig.df.row
             fold.elem <- modelObj$modelResamplePerfObj[[i]]$df.allfolds$fold==j
-            train.orig.df.row <- unique.orig.df.row[!unique.orig.df.row%in%test.orig.df.row]
             test.orig.df.row <- modelObj$modelResamplePerfObj[[i]]$df.allfolds$orig.df.row[fold.elem]
+            train.orig.df.row <- unique.orig.df.row[!unique.orig.df.row%in%test.orig.df.row]
             train[[j]] <- sort(train.orig.df.row)
             test[[j]] <- sort(test.orig.df.row)
             all.partitions[[i]][[j]] <- list('train' = train[[j]], 'test' = test[[j]], 'sample.type' = sample.type)

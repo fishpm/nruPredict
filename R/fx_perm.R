@@ -1,32 +1,30 @@
 ### Perform permutation resampling
 
-fx_perm <- function(df0, modelObj, nperm = 10, n.cores = 20){
+fx_perm <- function(df0, modelObj, nperm = 10, perm.positions = NULL, partitions = NULL, n.cores = 20){
     
     updateMarks <- seq(from = 0, to = nperm, length.out = 11)
     writeLines('Deriving permutation results...')
     
+    if(xor(is.null(perm.positions),is.null(partitions))){
+        stop('perm.positions and partitions must both be either null or specified')
+    }
+    
     parameters <- modelObj$parameters
     parameters$nperm <- nperm
     if(is.numeric(parameters$sample.type)){
-        
         stop('Permutation does not support numeric sample types.')
-        
     }
     
     permPerfObj <- lapply(seq(nperm), function(i){
         if (i%in%updateMarks){
             writeLines(paste0('\tPermutation: ', i, ' (', (i/nperm)*100, '% complete)'))
         }
-        
-        df.scramble <- fx_scramble(df0,parameters$outcome)
-        if(is.numeric(parameters$sample.type)){
-            
-            stop('Permutation does not support numeric sample types.')
-            
+        if(!is.null(perm.positions) & !is.null(partitions)){
+            df.scramble <- df0[perm.positions[[i]],]
+            partition.list <- partitions[[i]]
         } else {
-            
+            df.scramble <- fx_scramble(df0,parameters$outcome)
             partition.list <- fx_partition(df.scramble, type = parameters$sample.type)
-            
         }
         
         modelObjPerm <- mclapply(seq(length(partition.list)), function(j){

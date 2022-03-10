@@ -178,28 +178,28 @@ fx_model <- function(df.set, covar = NULL, voi = NULL, outcome = NULL, model.typ
     } else if (model.type == 'svm'){
         
         # define model
-        model.full <- svm(formula.full, data = df.train)
+        model.full <- svm(formula.full, data = df.train, probability = T)
         
         # derive model predicted probabilities
-        pred.class.full <- as.character(predict(model.full, newdata = df.test))
+        pred.prob.full <- attr(predict(model.full, newdata = df.test, probability = T), 'probabilities')[,class.levels[2]]
         
         # data frame containing model predicted class, probability of class membership and actual class
-        pred.full <- data.frame(pred.class = pred.class.full,
-                                pred.prob = rep(NA, nrow(df.test)),
+        pred.full <- data.frame(pred.class = rep(NA, nrow(df.test)),
+                                pred.prob = pred.prob.full,
                                 actual.class = as.character(df.set$df.test[,outcome]))
         
         # fit covariate model
         if(!is.null(covar)){
             
             # define model
-            model.covar <- svm(formula.covar, data = df.train)
+            model.covar <- svm(formula.covar, data = df.train, probability = T)
             
             # derive model predicted probabilities
-            pred.class.covar <- as.character(predict(model.covar, newdata = df.test))
+            pred.prob.covar <- attr(predict(model.covar, newdata = df.test, probability = T), 'probabilities')[,class.levels[2]]
             
             # data frame containing model predicted class, probability of class membership and actual class
-            pred.covar <- data.frame(pred.class = pred.class.covar,
-                                     pred.prob = rep(NA, nrow(df.test)),
+            pred.covar <- data.frame(pred.class = rep(NA, nrow(df.test)),
+                                     pred.prob = pred.prob.covar,
                                      actual.class = as.character(df.set$df.test[,outcome]))
         
         # no covariate model

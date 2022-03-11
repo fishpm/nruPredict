@@ -135,10 +135,12 @@ modelPerfObj2 <- fx_modelResamplePerf(modelResampleObj = modelObj2)
 permObj2 <- fx_perm(df0 = dd, modelObj = modelObj2, nperm = nperm, n.cores = 10)
 permPerfObj2 <- fx_permPerf(permObj = permObj2, modelResamplePerf = modelPerfObj2)
 
+modelPerfObj1$df.summary['avg', 'auc.ROC.full']-modelPerfObj2$df.summary['avg', 'auc.ROC.full']
+
 perm.positions <- lapply(seq(nperm), function(i){
     sample(seq(nrow(dd)), replace = F)
 })
-all.partitions <- lapply(seq(nresample), function(i){
+all.partitions <- lapply(seq(nperm), function(i){
     return(fx_partition(dd, type = '5-fold', balance.col = y))
 })
 
@@ -154,9 +156,11 @@ permObj2 <- fx_perm(df0 = dd, modelObj = modelObj2, nperm = nperm, n.cores = 10)
 permPerfObj2 <- fx_permPerf(permObj = permObj2, modelResamplePerf = modelPerfObj2)
 
 
+permPerfObj1$df.iter$auc.ROC.full-permPerfObj2$df.iter$auc.ROC.full
 
-
-    
+diff.obs <- modelPerfObj1$df.summary['avg', 'auc.ROC.full']-modelPerfObj2$df.summary['avg', 'auc.ROC.full']
+diff.perm <- permPerfObj1$df.iter$auc.ROC.full-permPerfObj2$df.iter$auc.ROC.full
+sum(abs(diff.perm)>abs(diff.obs))/nperm
 
 
 seq(100)%in%unlist(lapply(partition.list, function(i){i$test}))
@@ -240,3 +244,18 @@ dd.out <- data.frame(p1 = p1,
 cor(dd.out)
 
 
+l <- lm(f1 ~ group, data = dd)
+summary(l)
+plot(f1 ~ group, dd)
+
+mdd.n <- length(dd$f1[dd$group=='MDD'])
+mdd.mean <- mean(dd$f1[dd$group=='MDD'])
+mdd.sd <- sd(dd$f1[dd$group=='MDD'])
+hc.n <- length(dd$f1[dd$group=='HC'])
+hc.mean <- mean(dd$f1[dd$group=='HC'])
+hc.sd <- sd(dd$f1[dd$group=='HC'])
+
+
+diff.mean <- (mdd.mean-hc.mean)
+pooled.sd <- sqrt((((mdd.n-1)*mdd.sd**2)+((hc.n-1)*hc.sd**2))/((mdd.n+hc.n-2)))
+d <- diff.mean/pooled.sd

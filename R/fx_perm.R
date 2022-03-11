@@ -20,7 +20,8 @@ fx_perm <- function(df0, modelObj, nperm = 10, perm.positions = NULL, partitions
             writeLines(paste0('\tPermutation: ', i, ' (', (i/nperm)*100, '% complete)'))
         }
         if(!is.null(perm.positions) & !is.null(partitions)){
-            df.scramble <- df0[perm.positions[[i]],]
+            df.scramble <- df0
+            df.scramble[,parameters$outcome] <- df0[perm.positions[[i]],parameters$outcome]
             partition.list <- partitions[[i]]
         } else {
             df.scramble <- fx_scramble(df0,parameters$outcome)

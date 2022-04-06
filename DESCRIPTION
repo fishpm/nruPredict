@@ -2,7 +2,7 @@ Package: nruPredict
 Type: Package
 Title: Miscellaneous function for assessing predictive accuracy
 Version: 0.0.1
-Date: 2020-01-06
+Date: 2022-04-06
 Authors@R: c(
     person("Patrick", "Fisher", role = c("aut", "cre"), email = "patrick.fisher@nru.dk")
 	)
@@ -24,4 +24,4 @@ Imports:
 	zoo
 Suggests:
     testthat
-RoxygenNote: 6.1.1
+RoxygenNote: 7.1.2

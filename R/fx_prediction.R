@@ -1,13 +1,3 @@
-require('mvtnorm')
-require('parallel')
-require('pROC')
-require('lava')
-require('scales')
-require('ggplot2')
-require('randomForest')
-require('e1071')
-require('zoo')
-
 ####
 ## DEFINE FUNCTIONS
 ####

@@ -4,8 +4,7 @@
 \alias{fx_modelPerf}
 \title{xxx}
 \usage{
-fx_modelPerf(modelOutput, decisionThreshold = 0.5, many = T,
-  perm = F)
+fx_modelPerf(modelOutput, decisionThreshold = 0.5, many = T, perm = F)
 }
 \arguments{
 \item{modelOutput}{aa}

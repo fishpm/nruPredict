@@ -1,17 +1,18 @@
-### DESCRIPTION ###
+## * fx_partition2 (documentation)
+##' @description Extract CV fold assignment from a modelObj
+##'
+##' @param modelObj model object, containing observed model performances
+##'
+##' @return update
+##' \itemize{
+##' \item all.partitions: list of length nresamples (as defined within model Obj input). Each element contains list of length nfolds (i.e., number of folds within each resample). Each element of this sublist is a list containing three variables.
+##' \item train: row indices to be assigned to training dataset
+##' \item test: row indices to be assigned to testing dataset
+##' \item sample.type: cross-validation sampling type (e.g, 5-fold)
+##' }
 
-### Extract CV fold assignment from a modelObj
-
-# INPUTS:
-#   modelObj: model object, containing observed model performances
-
-# OUTPUTS: (update)
-#   all.partitions: list of length nresamples (as defined within model Obj input). Each element contains list of length nfolds (i.e., number of folds within each resample). Each element of this sublist is a list containing three variables.
-#       train: row indices to be assigned to training dataset
-#       test: row indices to be assigned to testing dataset
-#       sample.type: cross-validation sampling type (e.g, 5-fold)
-
-
+## * fx_partition2 (code)
+##' @export
 fx_partition2 <- function(modelObj = NULL){
     
     if(is.null(modelObj)){

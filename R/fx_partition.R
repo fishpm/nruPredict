@@ -1,20 +1,21 @@
-### DESCRIPTION ###
+## * fx_partition (documentation)
+##' @description List of partitions to apply to data frame for CV
+##'
+##' @param df0 data frame including all observations
+##' @param type cross-validation type
+##' @param nresaple
+##' @param balance.col
+##'
+##' @return list of same length as subsamples of train/test partitions.
+##' Each list element contains "test", "train" and "sample.type" variables:
+##' \itemize{
+##' \item "test": is numeric list, values correspond to rows in df0 assigned to model "test" group
+##' \item "train": is numeric list, values correspond to rows in df0 assigned to model "train" group
+##' \item "sample.type": description of cross-validation method (e.g., 5-fold)
+##' }
 
-### Partition data frame for CV
-
-# INPUTS:
-#   df0: data frame including all observations
-#   type: cross-validation type
-#   nresaple: 
-#   balance.col
-
-# OUTPUTS:
-#   partition.list: list of same length as subsamples of train/test partitions.
-#       Each list element contains "test", "train" and "sample.type" variables.
-#       "test":         is numeric list, values correspond to rows in df0 assigned to model "test" group
-#       "train"         is numeric list, values correspond to rows in df0 assigned to model "train" group
-#       "sample.type":  description of cross-validation method (e.g., 5-fold)
-
+## * fx_partition (code)
+##' @export
 fx_partition <- function(df0, type = NULL, nresample = NULL, balance.col = NULL){
     
     nsamples <- nrow(df0)
@@ -210,3 +211,71 @@ fx_partition <- function(df0, type = NULL, nresample = NULL, balance.col = NULL)
     
     return(partition.list)
 }
+
+
+## fx_partition <- function(df0, type = 'loocv', nresample = NULL, balance.col = NULL){
+    
+##     nSamples <- nrow(df0)
+##     nSequence <- seq(nSamples)
+    
+##     if (!(type %in% c('loocv', 'ltocv') | is.numeric(type) | grepl('(-fold)$', type))){
+##         stop('Invalid CV type.')
+##     } else if (type == 'loocv' | type == 'ltocv'){
+##         if (type == 'loocv'){nOut <- 1} else {nOut <- 2}
+##         tmp <- combn(nSamples, nOut)
+##         testSets <- split(tmp, col(tmp))
+##         trainSets <- lapply(seq(length(testSets)), function(i){
+##             nSequence[!(seq(nSamples) %in% testSets[[i]])]
+##         })
+##         partitionList <- lapply(seq(length(testSets)), function(i){
+##             list('train' = trainSets[[i]], 'test' = testSets[[i]], 'sample.type' = type)
+##         })
+##         return(partitionList)
+##     }
+##     else if (grepl('(-fold)$', type)){
+##         nFolds <- as.numeric(unlist(strsplit(type, '-fold')))
+##         if (is.na(nFolds)){stop(paste0('Bad n-fold: ', type))}
+##         tmp <- nSequence
+##         gSizeFloor <- floor(nSamples/nFolds)
+##         if (gSizeFloor == 0){
+##             stop(paste0('Too many folds (', nFolds, '), too little data (', nSamples, ').'))
+##         }
+##         partitionList <- list()
+##         for(i in seq(nFolds)){
+##             if (i <= nSamples %% nFolds){
+##                test <- sample(tmp, gSizeFloor+1)
+##                tmp <- tmp[-which(tmp %in% test)]
+##                }
+##             else {
+##                 test <- sample(tmp, gSizeFloor)
+##                 tmp <- tmp[-which(tmp %in% test)]
+##                 }
+##             train <- nSequence[-test]
+##             partitionList[[i]] <- list('train' = train, 'test' = test, 'sample.type' = type)
+##         }
+##         return(partitionList)
+##     }
+##     else if (is.numeric(type)){
+##         if (is.null(nresample)){stop(paste0('If type is numeric, resample must be defined.'))}
+##         if (is.null(balance.col)){stop(paste0('If type is numeric, balance.col must be defined.'))}
+##         groups <- levels(df0[,balance.col])
+##         nGroups <- table(df0[,balance.col])
+##         if (length(groups)>2){stop(paste0('Only 2 group levels allowed. Group levels identified: ', length(nGroups)))}
+##         if (type >= min(nGroups)){stop(paste0('Specified group size (', type, ') >= smallest group size (', min(nGroups), ').'))}
+
+##         partitionList <- lapply(seq(nresample), function(i){
+##             g1 <- which(df0[,balance.col] == groups[1])
+##             g1_trainSets <- sample(g1, type)
+##             g1_testSets <- g1[!(g1 %in% g1_trainSets)]
+##             g2 <- which(df0[,balance.col] == groups[2])
+##             g2_trainSets <- sample(g2, type)
+##             g2_testSets <- g2[!(g2 %in% g2_trainSets)]
+##             trainSets <- c(g1_trainSets, g2_trainSets)
+##             testSets <- c(g1_testSets, g2_testSets)
+##             list('train' = trainSets, 'test' = testSets, 'sample.type' = type, 'nresample' = nresample, 'balance.col' = balance.col)
+##         })
+##         return(partitionList)
+##     }
+##     else {stop(paste0('Unexpected input: ', type))}
+##     return(partitionList)
+## }

@@ -1,5 +1,11 @@
 ## * fx_scramble (documentation)
-##' @description Create data frame with scrambled group assignment 
+##' @title Scrambled Group Assignment
+##' @description Create data frame with scrambled group assignment
+##'
+##' @param df0 ???
+##' @param outcome ???
+##' @param resample ???
+##' @param outcome.class ???
 
 ## * fx_scramble (code)
 ##' @export

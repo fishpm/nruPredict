@@ -1,5 +1,12 @@
 ## * fx_permPerf (documentation)
+##' @title Organize Null Distributions
 ##' @description Estimate p-values, organize null distributions
+##'
+##' @param permObj ???
+##' @param modelResamplePerf ???
+##' @param measures ???
+##' @param compute.perf ???
+##' @param df.iter.out ???
 
 ## * fx_permPerf (code)
 ##' @export

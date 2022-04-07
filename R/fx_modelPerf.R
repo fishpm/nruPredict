@@ -2,10 +2,10 @@
 ##' @title Summary Measures of Model Performance
 ##' @description Derive summary measures of model performance
 ##' 
-##' @param modelOutput
-##' @param dthresh
-##' @param many
-##' @param perm
+##' @param modelOutput ???
+##' @param dthresh ???
+##' @param many ???
+##' @param perm ???
 ##'
 ##' @return A list of length five, containing the following elements:
 ##' \itemize{

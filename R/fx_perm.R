@@ -1,5 +1,13 @@
 ## * fx_perm (documentation)
+##' @title Perform Permutation Resampling
 ##' @description Perform permutation resampling to obtain a null distribution
+##'
+##' @param df0 ???
+##' @param modelObj ???
+##' @param nperm ???
+##' @param perm.positions ???
+##' @param partitions ???
+##' @param n.cores ??? 
 
 ## * fx_perm (code)
 ##' @export

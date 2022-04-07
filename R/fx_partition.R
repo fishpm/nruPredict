@@ -1,10 +1,11 @@
 ## * fx_partition (documentation)
+##' @title List of Partitions
 ##' @description List of partitions to apply to data frame for CV
 ##'
 ##' @param df0 data frame including all observations
 ##' @param type cross-validation type
-##' @param nresaple
-##' @param balance.col
+##' @param nresaple ???
+##' @param balance.col ???
 ##'
 ##' @return list of same length as subsamples of train/test partitions.
 ##' Each list element contains "test", "train" and "sample.type" variables:

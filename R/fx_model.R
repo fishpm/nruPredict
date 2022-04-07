@@ -1,4 +1,5 @@
 ## * fx_model (documentation)
+##' @title Train/Test Model
 ##' @description Train/test model on sub data frames
 ##'
 ##' @param df.set list containing train and test data frames

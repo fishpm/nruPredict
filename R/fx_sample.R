@@ -1,8 +1,9 @@
 ## * fx_sample (documentation)
+##' @title Break up Data into Train and Test
 ##' @description Break up single data frame into train and test datasets.
 ##'
-##' @param df0 data frame including all observations (data frame)
-##' @param partition list object containing train and test group assignment
+##' @param df0 data frame including all observations (data frame).
+##' @param partition list object containing train and test group assignment.
 ##'
 ##' @return A list of length three,containing subsets of original data frame and model parameters
 ##' \itemize{

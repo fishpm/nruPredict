@@ -1,5 +1,12 @@
 ## * fx_modelResamplePerf (documentation)
+##' @title Estimates Effects Across Model Variants
 ##' @description Estimates effects across model variants
+##'
+##' @param modelResampleObj ???
+##' @param measures ???
+##' @param compute.perf ???
+##' @param df.iter.out ???
+##' @param qrange ???
 
 ## * fx_modelResamplePerf (code)
 ##' @export

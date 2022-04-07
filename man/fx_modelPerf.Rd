@@ -7,7 +7,13 @@
 fx_modelPerf(modelOutput, dthresh = 0.5, many = T, perm = F)
 }
 \arguments{
-\item{perm}{}
+\item{modelOutput}{???}
+
+\item{dthresh}{???}
+
+\item{many}{???}
+
+\item{perm}{???}
 }
 \value{
 A list of length five, containing the following elements:

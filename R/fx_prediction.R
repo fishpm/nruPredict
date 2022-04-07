@@ -97,7 +97,7 @@ fx_modelVar <- function(modelPerfObj, modelObj, nresample = 50, n.cores = 20){
                      model.type = modelObj[[1]]$parameters$model.type)}, 
             mc.cores = 20)
         resample.modelPerfObj <- 
-            fx_modelPerf(resample.modelObj,decisionThreshold = modelPerfObj$parameters$decisionThreshold)
+            fx_modelPerf(resample.modelObj, dthresh = modelPerfObj$parameters$decisionThreshold)
     
     resample.modelPerfObj$df.allfolds <- NULL
     resample.modelPerfObj$parameters <- NULL
@@ -157,6 +157,7 @@ fx_modelVarPerf <- function(modelPerfObj, modelVarObj, measures = NULL, compute.
 }
 
 ## * fx_boot
+##' @title Bootstrap Confidence Intervals
 ##' @description Bootstrap confidence intervals
 ##' @export
 fx_boot <- function(df0, modelPerfObj, modelObj, partitionList, nboot = 10, n.cores = 20){
@@ -185,7 +186,7 @@ fx_boot <- function(df0, modelPerfObj, modelObj, partitionList, nboot = 10, n.co
             outcome.class <- T
         } else {stop(paste0('Unregcognized model.type (', parameters$model.type, ')'))}
         df.boot <- fx_scramble(df0, parameters$outcome,
-                               boot=T, outcome.class=outcome.class)
+                               outcome.class=outcome.class)
 
         modelObjPerm <- parallel::mclapply(seq(length(partitionList)), function(j){
             fx_model(fx_sample(df.boot,partitionList[[j]]),
@@ -195,7 +196,7 @@ fx_boot <- function(df0, modelPerfObj, modelObj, partitionList, nboot = 10, n.co
                      model.type = parameters$model.type)},
             mc.cores = n.cores)
         modelPerfObjPerm <- fx_modelPerf(modelObjPerm,
-                                         decisionThreshold = decisionThreshold)
+                                         dthresh = decisionThreshold)
 
         modelPerfObjPerm$df.allfolds <- NULL
         modelPerfObjPerm$parameters <- NULL
@@ -207,6 +208,7 @@ fx_boot <- function(df0, modelPerfObj, modelObj, partitionList, nboot = 10, n.co
 }
 
 ## * fx_bootPerf
+##' @title Estimate Bootstrap Distributions
 ##' @description Estimate CIs and p-values from bootstrap distributions
 ##' @export
 fx_bootPerf <- function(modelPerfObj, bootObj, measures = NULL, compute.perf = 'within', df.iter.out = T, qrange = c(0.025, 0.975)){

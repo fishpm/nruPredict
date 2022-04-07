@@ -1,5 +1,9 @@
 ## * fx_outFile (documentation)
+##' @title Handles Specified Output Files
 ##' @description Handles specified output files
+##'
+##' @param outFile ???
+##' @param ext.default ???
 
 ## * fx_outFile (code)
 ##' @export

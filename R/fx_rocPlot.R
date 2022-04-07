@@ -1,10 +1,11 @@
 ## * fx_rocPlot (documentation)
+##' @title Create AUC-ROC Plots
 ##' @description Create AUC-ROC plots
 ##'
-##' @param modelObj model object, containing observed model performances
-##' @param modelPerfObj object with summary measures of observed model performance
-##' @param permPerfObj object with summary measures of permutation model performance
-##' @param model.type string for title of ROC curve plot (string)
+##' @param modelObj model object, containing observed model performances.
+##' @param modelPerfObj object with summary measures of observed model performance.
+##' @param permPerfObj object with summary measures of permutation model performance.
+##' @param model.type string for title of ROC curve plot (string).
 ##'
 ##' @return ggplot object of ROC curve
 

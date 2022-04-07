@@ -1,5 +1,9 @@
 ## * fx_plot (documentation)
+##' @title Plot Null/Bootstrap Distributions
 ##' @description Plot observed vs. null/bootstrap distributions
+##'
+##' @param perfObj ???
+##' @param outFile ???
 
 ## * fx_plot (code)
 ##' @export

@@ -1,4 +1,5 @@
 ## * fx_partition2 (documentation)
+##' @title Extract CV Fold Assignment
 ##' @description Extract CV fold assignment from a modelObj
 ##'
 ##' @param modelObj model object, containing observed model performances

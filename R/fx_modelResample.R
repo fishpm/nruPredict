@@ -1,4 +1,5 @@
 ## * fx_modelResample (documentation)
+##' @title Apply Machine Learning Framework
 ##' @description Apply machine learning framework to specified dataset
 ##'
 ##' @param df0 data frame including all observations (data frame)

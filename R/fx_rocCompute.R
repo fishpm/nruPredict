@@ -1,9 +1,10 @@
 ## * fx_rocCompute (documentation)
+##' @title Derive AUC ROC
 ##' @description Derive AUC ROC and optimal threshold values
 ##'
-##' @param pred.prob
-##' @param actual.class
-##' @param class.levels
+##' @param pred.prob ???
+##' @param actual.class ???
+##' @param class.levels ???
 ##'
 ##' @return list of length five, containing the following elements: roc.auc, optimal.threshold
 

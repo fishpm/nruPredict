@@ -17,7 +17,7 @@ rand.vals2 <- rnorm(n,0,0.75)
 dd <- data.frame(group = group,
                  age = age,
                  sex = sex,
-                 f1 = rand.vals1 + as.numeric(dd$group),
+                 f1 = rand.vals1 + as.numeric(group),
                  f2 = rand.vals2)
 
 # linear model confirming f1 associated with group
@@ -259,3 +259,65 @@ hc.sd <- sd(dd$f1[dd$group=='HC'])
 diff.mean <- (mdd.mean-hc.mean)
 pooled.sd <- sqrt((((mdd.n-1)*mdd.sd**2)+((hc.n-1)*hc.sd**2))/((mdd.n+hc.n-2)))
 d <- diff.mean/pooled.sd
+
+
+### continuous prediction example
+
+# Make data frame
+
+# sample size
+n <- 100
+
+# create variables and data frame
+set.seed(1)
+rnorm(n,2.5,)
+bpnd <- factor(sample(c('MDD','HC'),n,replace=T))
+age <- rnorm(n,25,5)
+sex <- factor(sample(c('male','female'),n,replace=T))
+rand.vals1 <- rnorm(n,0,0.75)
+set.seed(2)
+rand.vals2 <- rnorm(n,0,0.75)
+dd <- data.frame(group = group,
+                 age = age,
+                 sex = sex,
+                 f1 = rand.vals1 + as.numeric(group),
+                 f2 = rand.vals2)
+
+# linear model confirming f1 associated with group
+summary(lm(f1 ~ group, data = dd))
+
+####
+## MODEL EXAMPLE 1
+####
+
+# covariates
+covar <- c('age','sex')
+# variables of interest
+voi <- c('f1','f2')
+# class outcome
+y <- 'group'
+
+# resamples and permutations
+nresample <- 10
+nperm <- 10
+
+# fit classification model
+modelObj <- fx_modelResample(df0 = dd, # data frame
+                             cv.type = '5-fold', # type of cross-validation
+                             covar = covar, # covariate set
+                             voi = voi,  # variables of interest (i.e., brain regions)
+                             outcome = y, # class
+                             model.type = 'rf', # model type (randomForest)
+                             nresample = nresample, # number of resamples
+                             dthresh = 0.5, # threshold (not used)
+                             z.pred = F, # standardize continuous predictors
+                             balance.col = y, # stratified cv
+                             n.cores = 10) # parallel processing
+
+# determine overall model performance
+modelPerfObj <- fx_modelResamplePerf(modelResampleObj = modelObj)
+# permutation testing
+permObj <- fx_perm(df0 = dd, modelObj = modelObj, nperm = nperm, n.cores = 10)
+# determine permutation test performance
+permPerfObj <- fx_permPerf(permObj = permObj, modelResamplePerf = modelPerfObj)
+

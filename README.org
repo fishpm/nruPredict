@@ -1,0 +1,26 @@
+* nruPredict: miscellaneous functions for assessing predictive accuracy
+
+Main functions:
+- fx_scramble: Create df with scrambled group assignment
+- fx_partition: List of partitions to apply to data frame
+- fx_sample: Create train/test sub data frames
+- fx_model: Train/test model on sub data frames
+- fx_modelPerf: Confusion matrix and model performance metrics
+- fx_rocCompute: Compute AUC of ROC
+- fx_perm: Derive null distribution
+- fx_boot: Bootstrap confidence intervals
+- fx_permPerf: Estimate p-values, organize null distributions
+- fx_bootPerf: Estimate CIs and p-values from bootstrap distributions
+- fx_plot: Plot observed vs. null/bootstrap distributions
+- fx_rocPlot: Estimate and plot ROC
+- fx_outFile: Handles specified output files
+- fx_summary: Produces .txt summary of model info (incomplete)
+
+* Installation
+
+You can download the development version from =GitHub= using:
+#+BEGIN_SRC R :exports both :eval never
+library(remotes)
+install_github("fishpm/nruPredict")
+#+END_SRC
+

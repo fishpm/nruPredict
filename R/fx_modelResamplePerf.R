@@ -1,5 +1,15 @@
-### Estimates effects across model variants
+## * fx_modelResamplePerf (documentation)
+##' @title Estimates Effects Across Model Variants
+##' @description Estimates effects across model variants
+##'
+##' @param modelResampleObj ???
+##' @param measures ???
+##' @param compute.perf ???
+##' @param df.iter.out ???
+##' @param qrange ???
 
+## * fx_modelResamplePerf (code)
+##' @export
 fx_modelResamplePerf <- function(modelResampleObj, measures = NULL, compute.perf = 'within', df.iter.out = T, qrange = c(0.025, 0.975)){
     
     parameters <- modelResampleObj$parameters

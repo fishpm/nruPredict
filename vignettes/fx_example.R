@@ -1,5 +1,7 @@
-source('~/github/nruPredict/R/fx_nruPredict.R')
-
+## source('~/github/nruPredict/R/fx_nruPredict.R')
+library(nruPredict)
+library(randomForest)
+library(e1071)
 
 # Make data frame
 
@@ -37,6 +39,7 @@ y <- 'group'
 # resamples and permutations
 nresample <- 10
 nperm <- 10
+n.cores <- 1 ## 10
 
 # fit classification model
 modelObj <- fx_modelResample(df0 = dd, # data frame
@@ -49,12 +52,12 @@ modelObj <- fx_modelResample(df0 = dd, # data frame
                              dthresh = 0.5, # threshold (not used)
                              z.pred = F, # standardize continuous predictors
                              balance.col = y, # stratified cv
-                             n.cores = 10) # parallel processing
+                             n.cores = n.cores) # parallel processing
 
 # determine overall model performance
 modelPerfObj <- fx_modelResamplePerf(modelResampleObj = modelObj)
 # permutation testing
-permObj <- fx_perm(df0 = dd, modelObj = modelObj, nperm = nperm, n.cores = 10)
+permObj <- fx_perm(df0 = dd, modelObj = modelObj, nperm = nperm, n.cores = n.cores)
 # determine permutation test performance
 permPerfObj <- fx_permPerf(permObj = permObj, modelResamplePerf = modelPerfObj)
 
@@ -108,7 +111,7 @@ modelObj1 <- fx_modelResample(df0 = dd, # data frame
                              z.pred = F, # standardize continuous predictors
                              balance.col = y, # stratified cv
                              partitions = all.partitions, # defines fold assignment for each resample
-                             n.cores = 10) # parallel processing
+                             n.cores = n.cores) # parallel processing
 
 voi2 <- 'f3'
 # fit classification model
@@ -123,16 +126,16 @@ modelObj2 <- fx_modelResample(df0 = dd, # data frame
                              z.pred = F, # standardize continuous predictors
                              balance.col = y, # stratified cv
                              partitions = all.partitions, # defines fold assignment for each resample
-                             n.cores = 10) # parallel processing
+                             n.cores = n.cores) # parallel processing
 
 # model1 summary objects
 modelPerfObj1 <- fx_modelResamplePerf(modelResampleObj = modelObj1)
-permObj1 <- fx_perm(df0 = dd, modelObj = modelObj1, nperm = nperm, n.cores = 10)
+permObj1 <- fx_perm(df0 = dd, modelObj = modelObj1, nperm = nperm, n.cores = n.cores)
 permPerfObj1 <- fx_permPerf(permObj = permObj1, modelResamplePerf = modelPerfObj1)
 
 # model2 summary objects
 modelPerfObj2 <- fx_modelResamplePerf(modelResampleObj = modelObj2)
-permObj2 <- fx_perm(df0 = dd, modelObj = modelObj2, nperm = nperm, n.cores = 10)
+permObj2 <- fx_perm(df0 = dd, modelObj = modelObj2, nperm = nperm, n.cores = n.cores)
 permPerfObj2 <- fx_permPerf(permObj = permObj2, modelResamplePerf = modelPerfObj2)
 
 modelPerfObj1$df.summary['avg', 'auc.ROC.full']-modelPerfObj2$df.summary['avg', 'auc.ROC.full']
@@ -146,13 +149,13 @@ all.partitions <- lapply(seq(nperm), function(i){
 
 # model1 summary objects
 modelPerfObj1 <- fx_modelResamplePerf(modelResampleObj = modelObj1)
-permObj1 <- fx_perm(df0 = dd, modelObj = modelObj1, nperm = nperm, perm.positions = perm.positions, partitions = all.partitions, n.cores = 10)
+permObj1 <- fx_perm(df0 = dd, modelObj = modelObj1, nperm = nperm, perm.positions = perm.positions, partitions = all.partitions, n.cores = n.cores)
 
 permPerfObj1 <- fx_permPerf(permObj = permObj1, modelResamplePerf = modelPerfObj1)
 
 # model2 summary objects
 modelPerfObj2 <- fx_modelResamplePerf(modelResampleObj = modelObj2)
-permObj2 <- fx_perm(df0 = dd, modelObj = modelObj2, nperm = nperm, n.cores = 10)
+permObj2 <- fx_perm(df0 = dd, modelObj = modelObj2, nperm = nperm, n.cores = n.cores)
 permPerfObj2 <- fx_permPerf(permObj = permObj2, modelResamplePerf = modelPerfObj2)
 
 
@@ -185,7 +188,7 @@ modelObj.rf <- fx_modelResample(df0 = dd, # data frame
                              dthresh = 0.5, # threshold (not used)
                              z.pred = F, # standardize continuous predictors
                              balance.col = y, # stratified cv
-                             n.cores = 10) # parallel processing
+                             n.cores = n.cores) # parallel processing
 
 all.partitions <- fx_partition2(modelObj.rf)
 modelPerfObj.rf <- fx_modelResamplePerf(modelResampleObj = modelObj.rf)

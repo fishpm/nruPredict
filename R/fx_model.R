@@ -76,7 +76,7 @@ fx_model <- function(df.set, covar = NULL, voi = NULL, outcome = NULL, model.typ
                        formula.covar = formula.covar,
                        formula.full = formula.full,
                        data.frame = df.set$parameters$data.frame
-    )
+                       )
     
     # standardize non-factor features
     if(z.pred){
@@ -221,13 +221,18 @@ fx_model <- function(df.set, covar = NULL, voi = NULL, outcome = NULL, model.typ
         # define model
         model.full <- lm(formula.full, data = df.train)
         
+        # mean squared-error on observations in df.train
+        mse.train <- mean((df.train[,outcome]-predict(model.full, newdata = df.train, type = 'response'))**2)
+        # sum(model.covar$residuals**2)/length(model.covar$residuals) <- equivalent to this value
+        
         # derive model predicted values
         pred.values.full <- predict(model.full, newdata = df.test)
         
-        # data frame containing model predicted values, actual values, and model r-squared
+        # data frame containing model predicted values, actual values, model r-squared, mean squared-error
         pred.full <- data.frame(pred.values = pred.values.full,
                                 actual.values = df.set$df.test[,outcome],
-                                rsq = summary(model.full)$r.squared)
+                                rsq = summary(model.full)$r.squared,
+                                mse.train = mse.train)
         
         # fit covariate model
         if(!is.null(covar)){
@@ -235,13 +240,18 @@ fx_model <- function(df.set, covar = NULL, voi = NULL, outcome = NULL, model.typ
             # define model
             model.covar <- lm(formula.covar, data = df.train)
             
+            # mean squared-error on observations in df.train
+            mse.train <- mean((df.train[,outcome]-predict(model.covar, newdata = df.train, type = 'response'))**2)
+            # sum(model.covar$residuals**2)/length(model.covar$residuals) <- equivalent to this value
+            
             # derive model predicted values
             pred.values.covar <- predict(model.covar, newdata = df.test)
             
             # data frame containing model predicted values, actual values, and model r-squared
             pred.covar <- data.frame(pred.values = pred.values.covar,
                                      actual.values = df.set$df.test[,outcome],
-                                     rsq = summary(model.covar)$r.squared)
+                                     rsq = summary(model.covar)$r.squared,
+                                     mse.train = mse.train)
         
         # no covariate model
         } else {
@@ -251,6 +261,7 @@ fx_model <- function(df.set, covar = NULL, voi = NULL, outcome = NULL, model.typ
             pred.covar$pred.values <- NA
             pred.covar$actual.values <- NA
             pred.covar$rsq <- NA
+            pred.covar$mse.train <- NA
             
         }
     
@@ -260,13 +271,17 @@ fx_model <- function(df.set, covar = NULL, voi = NULL, outcome = NULL, model.typ
         # define model
         model.full <- randomForest(formula.full, data = df.train)
         
+        # mean squared-error on observations in df.train
+        mse.train <- mean((df.train[,outcome]-predict(model.full, newdata = df.train, type = 'response'))**2)
+        
         # derive model predicted values
         pred.values.full <- predict(model.full, newdata = df.test, type = 'response')
         
         # data frame containing model predicted values, actual values, and model r-squared
         pred.full <- data.frame(pred.values = pred.values.full,
                                 actual.values = df.set$df.test[,outcome],
-                                rsq = NA)
+                                rsq = NA,
+                                mse.train = mse.train)
         
         # fit covariate model
         if(!is.null(covar)){
@@ -274,13 +289,17 @@ fx_model <- function(df.set, covar = NULL, voi = NULL, outcome = NULL, model.typ
             # define model    
             model.covar <- randomForest(formula.covar, data = df.train)
             
+            # mean squared-error on observations in df.train
+            mse.train <- mean((df.train[,outcome]-predict(model.covar, newdata = df.train, type = 'response'))**2)
+            
             # derive model predicted values
             pred.values.covar <- predict(model.covar, newdata = df.test, type = 'response')
             
             # data frame containing model predicted values, actual values, and model r-squared
             pred.covar <- data.frame(pred.values = pred.values.covar,
                                      actual.values = df.set$df.test[,outcome],
-                                     rsq = NA)
+                                     rsq = NA,
+                                     mse.train = mse.train)
         
         # no covariate model
         } else {
@@ -290,6 +309,7 @@ fx_model <- function(df.set, covar = NULL, voi = NULL, outcome = NULL, model.typ
             pred.covar$pred.values <- NA
             pred.covar$actual.values <- NA
             pred.covar$rsq <- NA
+            pred.covar$mse.train <- NA
             
         }
         

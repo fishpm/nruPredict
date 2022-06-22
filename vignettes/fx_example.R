@@ -1,5 +1,13 @@
 ## source('~/github/nruPredict/R/fx_nruPredict.R')
+## source('~/github/nruPredict/vignettes/fx_nruPredict.R')
+
+## Other users
+## remotes::install_github('fishpm/nruPredict')
 library(nruPredict)
+
+## you
+## devtools::load_all()
+
 library(randomForest)
 library(e1071)
 
@@ -273,21 +281,20 @@ n <- 100
 
 # create variables and data frame
 set.seed(1)
-rnorm(n,2.5,)
-bpnd <- factor(sample(c('MDD','HC'),n,replace=T))
+bpnd <- rnorm(n,2.5,1)
 age <- rnorm(n,25,5)
 sex <- factor(sample(c('male','female'),n,replace=T))
 rand.vals1 <- rnorm(n,0,0.75)
 set.seed(2)
 rand.vals2 <- rnorm(n,0,0.75)
-dd <- data.frame(group = group,
+dd <- data.frame(bpnd = bpnd,
                  age = age,
                  sex = sex,
-                 f1 = rand.vals1 + as.numeric(group),
+                 f1 = rand.vals1 + bpnd,
                  f2 = rand.vals2)
 
 # linear model confirming f1 associated with group
-summary(lm(f1 ~ group, data = dd))
+summary(lm(bpnd ~ age + sex + f1 + f2, data = dd))
 
 ####
 ## MODEL EXAMPLE 1
@@ -298,29 +305,40 @@ covar <- c('age','sex')
 # variables of interest
 voi <- c('f1','f2')
 # class outcome
-y <- 'group'
+y <- 'bpnd'
 
 # resamples and permutations
 nresample <- 10
-nperm <- 10
+nperm <- 100
+
+all.partitions <- lapply(seq(nresample), function(i){
+    return(fx_partition(dd, type = '5-fold'))
+})
+perm.positions <- lapply(seq(nperm), function(i){
+    sample(seq(nrow(dd)), replace = F)
+})
 
 # fit classification model
 modelObj <- fx_modelResample(df0 = dd, # data frame
                              cv.type = '5-fold', # type of cross-validation
                              covar = covar, # covariate set
                              voi = voi,  # variables of interest (i.e., brain regions)
-                             outcome = y, # class
-                             model.type = 'rf', # model type (randomForest)
+                             outcome = y, # outcome variable
+                             model.type = 'regression', # model type (randomForest)
                              nresample = nresample, # number of resamples
-                             dthresh = 0.5, # threshold (not used)
+                             partitions = all.partitions,
                              z.pred = F, # standardize continuous predictors
-                             balance.col = y, # stratified cv
                              n.cores = 10) # parallel processing
 
 # determine overall model performance
 modelPerfObj <- fx_modelResamplePerf(modelResampleObj = modelObj)
 # permutation testing
-permObj <- fx_perm(df0 = dd, modelObj = modelObj, nperm = nperm, n.cores = 10)
+permObj <- fx_perm(df0 = dd, 
+                   modelObj = modelObj, 
+                   nperm = nperm, 
+                   perm.positions = perm.positions, 
+                   partitions = all.partitions,
+                   n.cores = 10)
 # determine permutation test performance
 permPerfObj <- fx_permPerf(permObj = permObj, modelResamplePerf = modelPerfObj)
 

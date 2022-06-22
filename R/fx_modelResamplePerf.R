@@ -26,7 +26,7 @@ fx_modelResamplePerf <- function(modelResampleObj, measures = NULL, compute.perf
     classmodels <- c('svm','rf','logistic')
     
     if(parameters$model.type%in%regmodels){
-        measuresSet <- c('rmse', 'rsq')
+        measuresSet <- c('rmse', 'rsq', 'g')
     } else if(parameters$model.type%in%classmodels) {
         measuresSet <- c('acc', 'auc.ROC', 'sens', 'spec', 'ppv', 'npv', 'optThresh')
     }

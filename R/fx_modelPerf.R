@@ -174,8 +174,16 @@ fx_modelPerf <- function(modelOutput, dthresh = 0.5, many = T, perm = F){
             # r-squared (NOTE: THIS IS FROM TRAINING MODEL)
             foldrsq.full <- sapply(seq(n.models), function(j){modelOutput[[j]]$pred.full$rsq[1]})
             
-            # root mean squared error
-            rmse.full <- sqrt(mean((df.tmp$pred.values.full-df.tmp$actual.values)**2))
+            # mean and root-mean squared error
+            if (j == 'across'){
+                mse.test <- NA
+            } else {
+                mse.full.test <- mean((df.tmp$actual.values-df.tmp$pred.values.full)**2)
+                
+                # see "G" equation on p. 222 in Section 12.4.1.2 of Permutation, Parametric and Bootstrap Tests of Hypotheses by Good P (3rd edition)
+                g.full <- mse.full.test/unique(modelOutput[[j]]$pred.full$mse.train)
+            }
+            rmse.full <- sqrt(mean((df.tmp$actual.values-df.tmp$pred.values.full)**2))
             
             # if covariate model specified
             if(!is.null(parameters$covar)){
@@ -183,14 +191,23 @@ fx_modelPerf <- function(modelOutput, dthresh = 0.5, many = T, perm = F){
                 # r-squared (NOTE: THIS IS FROM TRAINING MODEL)
                 foldrsq.covar <- sapply(seq(n.models),function(j){modelOutput[[j]]$pred.covar$rsq[1]})
                 
-                # root mean squared error
-                rmse.covar <- sqrt(mean((df.tmp$pred.values.covar-df.tmp$actual.values)**2))
+                # mean root-mean squared error
+                if (j == 'across'){
+                    mse.covar.test <- NA
+                } else {
+                    mse.covar.test <- mean((df.tmp$actual.values-df.tmp$pred.values.covar)**2)
+                    
+                    # see "G" equation on p. 222 in Section 12.4.1.2 of Permutation, Parametric and Bootstrap Tests of Hypotheses by Good P (3rd edition)
+                    g.covar <- mse.covar.test/unique(modelOutput[[j]]$pred.covar$mse.train)
+                }
+                rmse.covar <- sqrt(mean((df.tmp$actual.values-df.tmp$pred.values.covar)**2))
             
             # no covariate model specified    
             } else {
                 
                 foldrsq.covar <- rep(NA,n.models)
                 rmse.covar <- NA
+                g.covar <- NA
                 
             }
             
@@ -217,7 +234,9 @@ fx_modelPerf <- function(modelOutput, dthresh = 0.5, many = T, perm = F){
             perfMetrics <- data.frame(rmse.covar = rmse.covar,
                                       rmse.full = rmse.full,
                                       rsq.covar = rsq.covar,
-                                      rsq.full = rsq.full)
+                                      rsq.full = rsq.full,
+                                      g.covar = g.covar,
+                                      g.full = g.full)
             
             return(list(perfMetrics = perfMetrics, fold = i))
         

@@ -46,7 +46,7 @@ y <- 'group'
 
 # resamples and permutations
 nresample <- 10
-nperm <- 10
+nperm <- 50
 n.cores <- 1 ## 10
 
 # fit classification model
@@ -173,14 +173,6 @@ diff.obs <- modelPerfObj1$df.summary['avg', 'auc.ROC.full']-modelPerfObj2$df.sum
 diff.perm <- permPerfObj1$df.iter$auc.ROC.full-permPerfObj2$df.iter$auc.ROC.full
 sum(abs(diff.perm)>abs(diff.obs))/nperm
 
-
-seq(100)%in%unlist(lapply(partition.list, function(i){i$test}))
-table(unlist(lapply(partition.list, function(i){i$test})))
-
-lapply(partition.list, function(i){
-    table(dd[i$train,'group'])
-    #i$train
-    })
 
 
 
@@ -309,7 +301,7 @@ y <- 'bpnd'
 
 # resamples and permutations
 nresample <- 10
-nperm <- 100
+nperm <- 50
 
 all.partitions <- lapply(seq(nresample), function(i){
     return(fx_partition(dd, type = '5-fold'))
@@ -319,6 +311,7 @@ perm.positions <- lapply(seq(nperm), function(i){
 })
 
 # fit classification model
+source('~/github/nruPredict/vignettes/fx_nruPredict.R')
 modelObj <- fx_modelResample(df0 = dd, # data frame
                              cv.type = '5-fold', # type of cross-validation
                              covar = covar, # covariate set
@@ -336,9 +329,13 @@ modelPerfObj <- fx_modelResamplePerf(modelResampleObj = modelObj)
 permObj <- fx_perm(df0 = dd, 
                    modelObj = modelObj, 
                    nperm = nperm, 
+                   nresample = nresample,
                    perm.positions = perm.positions, 
                    partitions = all.partitions,
                    n.cores = 10)
 # determine permutation test performance
 permPerfObj <- fx_permPerf(permObj = permObj, modelResamplePerf = modelPerfObj)
 
+modelPerfObj
+
+source('~/github/nruPredict/vignettes/fx_nruPredict.R')

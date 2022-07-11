@@ -175,14 +175,16 @@ fx_modelPerf <- function(modelOutput, dthresh = 0.5, many = T, perm = F){
             foldrsq.full <- sapply(seq(n.models), function(j){modelOutput[[j]]$pred.full$rsq[1]})
             
             # mean and root-mean squared error
-            if (j == 'across'){
+            if (i == 'across'){
                 mse.test <- NA
+                g.full <- NA
             } else {
                 mse.full.test <- mean((df.tmp$actual.values-df.tmp$pred.values.full)**2)
                 
                 # see "G" equation on p. 222 in Section 12.4.1.2 of Permutation, Parametric and Bootstrap Tests of Hypotheses by Good P (3rd edition)
-                g.full <- mse.full.test/unique(modelOutput[[j]]$pred.full$mse.train)
+                g.full <- mse.full.test/unique(modelOutput[[as.numeric(i)]]$pred.full$mse.train)
             }
+
             rmse.full <- sqrt(mean((df.tmp$actual.values-df.tmp$pred.values.full)**2))
             
             # if covariate model specified
@@ -192,13 +194,14 @@ fx_modelPerf <- function(modelOutput, dthresh = 0.5, many = T, perm = F){
                 foldrsq.covar <- sapply(seq(n.models),function(j){modelOutput[[j]]$pred.covar$rsq[1]})
                 
                 # mean root-mean squared error
-                if (j == 'across'){
+                if (i == 'across'){
                     mse.covar.test <- NA
+                    g.covar <- NA
                 } else {
                     mse.covar.test <- mean((df.tmp$actual.values-df.tmp$pred.values.covar)**2)
                     
                     # see "G" equation on p. 222 in Section 12.4.1.2 of Permutation, Parametric and Bootstrap Tests of Hypotheses by Good P (3rd edition)
-                    g.covar <- mse.covar.test/unique(modelOutput[[j]]$pred.covar$mse.train)
+                    g.covar <- mse.covar.test/unique(modelOutput[[as.numeric(i)]]$pred.covar$mse.train)
                 }
                 rmse.covar <- sqrt(mean((df.tmp$actual.values-df.tmp$pred.values.covar)**2))
             

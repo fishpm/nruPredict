@@ -150,8 +150,7 @@
 
 ## * fx_modelResample (code)
 ##' @export
-fx_modelResample <- function(df0, cv.type = NULL, covar = NULL, voi = NULL, outcome = NULL, model.type = NULL,
-                             nresample = 1, dthresh = 0.5, z.pred = F, n.cores = 20, balance.col = NULL, partitions = NULL){
+fx_modelResample <- function(df0, cv.type = NULL, covar = NULL, voi = NULL, outcome = NULL, model.type = NULL, nresample = 1, dthresh = 0.5, z.pred = F, n.cores = 20, balance.col = NULL, partitions = NULL){
     
     # For visual update on progress
     updateMarks <- seq(from = 0, to = nresample, length.out = 11)
